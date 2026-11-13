@@ -1,0 +1,1042 @@
+[
+  {
+    "id": "big",
+    "en": "big",
+    "ipa": "/bɪɡ/",
+    "pos": "adjective",
+    "vi": "to",
+    "example": "This bag is too big.",
+    "exampleVi": "Cái túi này quá to.",
+    "level": "A1"
+  },
+  {
+    "id": "book",
+    "en": "book",
+    "ipa": "/bʊk/",
+    "pos": "noun",
+    "vi": "quyển sách",
+    "example": "This book is easy to read.",
+    "exampleVi": "Quyển sách này dễ đọc.",
+    "level": "A1"
+  },
+  {
+    "id": "come",
+    "en": "come",
+    "ipa": "/kʌm/",
+    "pos": "verb",
+    "vi": "đến",
+    "example": "Please come in.",
+    "exampleVi": "Mời vào.",
+    "level": "A1"
+  },
+  {
+    "id": "day",
+    "en": "day",
+    "ipa": "/deɪ/",
+    "pos": "noun",
+    "vi": "ngày",
+    "example": "Have a good day.",
+    "exampleVi": "Chúc một ngày tốt lành.",
+    "level": "A1"
+  },
+  {
+    "id": "drink",
+    "en": "drink",
+    "ipa": "/drɪŋk/",
+    "pos": "verb",
+    "vi": "uống",
+    "example": "I drink tea in the morning.",
+    "exampleVi": "Tôi uống trà vào buổi sáng.",
+    "level": "A1"
+  },
+  {
+    "id": "eat",
+    "en": "eat",
+    "ipa": "/iːt/",
+    "pos": "verb",
+    "vi": "ăn",
+    "example": "We eat rice for lunch.",
+    "exampleVi": "Chúng tôi ăn cơm vào bữa trưa.",
+    "level": "A1"
+  },
+  {
+    "id": "family",
+    "en": "family",
+    "ipa": "/ˈfæməli/",
+    "pos": "noun",
+    "vi": "gia đình",
+    "example": "I have a small family.",
+    "exampleVi": "Tôi có một gia đình nhỏ.",
+    "level": "A1"
+  },
+  {
+    "id": "food",
+    "en": "food",
+    "ipa": "/fuːd/",
+    "pos": "noun",
+    "vi": "thức ăn",
+    "example": "The food is on the table.",
+    "exampleVi": "Thức ăn ở trên bàn.",
+    "level": "A1"
+  },
+  {
+    "id": "friend",
+    "en": "friend",
+    "ipa": "/frend/",
+    "pos": "noun",
+    "vi": "bạn",
+    "example": "She is my friend from class.",
+    "exampleVi": "Cô ấy là bạn cùng lớp của tôi.",
+    "level": "A1"
+  },
+  {
+    "id": "go",
+    "en": "go",
+    "ipa": "/ɡəʊ/",
+    "pos": "verb",
+    "vi": "đi",
+    "example": "I go to school by bike.",
+    "exampleVi": "Tôi đi học bằng xe đạp.",
+    "level": "A1"
+  },
+  {
+    "id": "good",
+    "en": "good",
+    "ipa": "/ɡʊd/",
+    "pos": "adjective",
+    "vi": "tốt",
+    "example": "That is a good idea.",
+    "exampleVi": "Đó là một ý hay.",
+    "level": "A1"
+  },
+  {
+    "id": "hello",
+    "en": "hello",
+    "ipa": "/həˈləʊ/",
+    "pos": "interjection",
+    "vi": "xin chào",
+    "example": "Hello, my name is Mai.",
+    "exampleVi": "Xin chào, tên tôi là Mai.",
+    "level": "A1"
+  },
+  {
+    "id": "house",
+    "en": "house",
+    "ipa": "/haʊs/",
+    "pos": "noun",
+    "vi": "ngôi nhà",
+    "example": "Their house is near the school.",
+    "exampleVi": "Nhà họ ở gần trường.",
+    "level": "A1"
+  },
+  {
+    "id": "school",
+    "en": "school",
+    "ipa": "/skuːl/",
+    "pos": "noun",
+    "vi": "trường học",
+    "example": "School starts at seven.",
+    "exampleVi": "Trường học bắt đầu lúc bảy giờ.",
+    "level": "A1"
+  },
+  {
+    "id": "see",
+    "en": "see",
+    "ipa": "/siː/",
+    "pos": "verb",
+    "vi": "nhìn thấy",
+    "example": "I can see the river.",
+    "exampleVi": "Tôi nhìn thấy dòng sông.",
+    "level": "A1"
+  },
+  {
+    "id": "small",
+    "en": "small",
+    "ipa": "/smɔːl/",
+    "pos": "adjective",
+    "vi": "nhỏ",
+    "example": "They live in a small room.",
+    "exampleVi": "Họ sống trong một phòng nhỏ.",
+    "level": "A1"
+  },
+  {
+    "id": "teacher",
+    "en": "teacher",
+    "ipa": "/ˈtiːtʃə/",
+    "pos": "noun",
+    "vi": "giáo viên",
+    "example": "Our teacher speaks slowly.",
+    "exampleVi": "Giáo viên của chúng tôi nói chậm.",
+    "level": "A1"
+  },
+  {
+    "id": "time",
+    "en": "time",
+    "ipa": "/taɪm/",
+    "pos": "noun",
+    "vi": "thời gian",
+    "example": "What time is it?",
+    "exampleVi": "Mấy giờ rồi?",
+    "level": "A1"
+  },
+  {
+    "id": "want",
+    "en": "want",
+    "ipa": "/wɒnt/",
+    "pos": "verb",
+    "vi": "muốn",
+    "example": "I want a cup of tea.",
+    "exampleVi": "Tôi muốn một tách trà.",
+    "level": "A1"
+  },
+  {
+    "id": "water",
+    "en": "water",
+    "ipa": "/ˈwɔːtə/",
+    "pos": "noun",
+    "vi": "nước",
+    "example": "Can I have a glass of water?",
+    "exampleVi": "Cho tôi một ly nước được không?",
+    "level": "A1"
+  },
+  {
+    "id": "answer",
+    "en": "answer",
+    "ipa": "/ˈɑːnsə/",
+    "pos": "noun",
+    "vi": "câu trả lời",
+    "example": "That is the right answer.",
+    "exampleVi": "Đó là câu trả lời đúng.",
+    "level": "A2"
+  },
+  {
+    "id": "borrow",
+    "en": "borrow",
+    "ipa": "/ˈbɒrəʊ/",
+    "pos": "verb",
+    "vi": "mượn",
+    "example": "May I borrow your pen?",
+    "exampleVi": "Tôi mượn bút của bạn được không?",
+    "level": "A2"
+  },
+  {
+    "id": "busy",
+    "en": "busy",
+    "ipa": "/ˈbɪzi/",
+    "pos": "adjective",
+    "vi": "bận",
+    "example": "I am busy this afternoon.",
+    "exampleVi": "Chiều nay tôi bận.",
+    "level": "A2"
+  },
+  {
+    "id": "cheap",
+    "en": "cheap",
+    "ipa": "/tʃiːp/",
+    "pos": "adjective",
+    "vi": "rẻ",
+    "example": "This market is cheap.",
+    "exampleVi": "Chợ này rẻ.",
+    "level": "A2"
+  },
+  {
+    "id": "early",
+    "en": "early",
+    "ipa": "/ˈɜːli/",
+    "pos": "adjective",
+    "vi": "sớm",
+    "example": "She arrived early.",
+    "exampleVi": "Cô ấy đến sớm.",
+    "level": "A2"
+  },
+  {
+    "id": "expensive",
+    "en": "expensive",
+    "ipa": "/ɪkˈspensɪv/",
+    "pos": "adjective",
+    "vi": "đắt",
+    "example": "The shoes were expensive.",
+    "exampleVi": "Đôi giày đó đắt.",
+    "level": "A2"
+  },
+  {
+    "id": "forget",
+    "en": "forget",
+    "ipa": "/fəˈɡet/",
+    "pos": "verb",
+    "vi": "quên",
+    "example": "Don't forget your keys.",
+    "exampleVi": "Đừng quên chìa khóa.",
+    "level": "A2"
+  },
+  {
+    "id": "healthy",
+    "en": "healthy",
+    "ipa": "/ˈhelθi/",
+    "pos": "adjective",
+    "vi": "khỏe mạnh",
+    "example": "Fruit is healthy food.",
+    "exampleVi": "Trái cây là thức ăn tốt cho sức khỏe.",
+    "level": "A2"
+  },
+  {
+    "id": "hospital",
+    "en": "hospital",
+    "ipa": "/ˈhɒspɪtl/",
+    "pos": "noun",
+    "vi": "bệnh viện",
+    "example": "The hospital is on this street.",
+    "exampleVi": "Bệnh viện ở trên phố này.",
+    "level": "A2"
+  },
+  {
+    "id": "journey",
+    "en": "journey",
+    "ipa": "/ˈdʒɜːni/",
+    "pos": "noun",
+    "vi": "hành trình",
+    "example": "The journey takes two hours.",
+    "exampleVi": "Hành trình mất hai giờ.",
+    "level": "A2"
+  },
+  {
+    "id": "late",
+    "en": "late",
+    "ipa": "/leɪt/",
+    "pos": "adjective",
+    "vi": "muộn",
+    "example": "The bus is late.",
+    "exampleVi": "Xe buýt đến muộn.",
+    "level": "A2"
+  },
+  {
+    "id": "lend",
+    "en": "lend",
+    "ipa": "/lend/",
+    "pos": "verb",
+    "vi": "cho mượn",
+    "example": "I can lend you an umbrella.",
+    "exampleVi": "Tôi có thể cho bạn mượn ô.",
+    "level": "A2"
+  },
+  {
+    "id": "message",
+    "en": "message",
+    "ipa": "/ˈmesɪdʒ/",
+    "pos": "noun",
+    "vi": "tin nhắn",
+    "example": "I sent you a message.",
+    "exampleVi": "Tôi đã gửi cho bạn một tin nhắn.",
+    "level": "A2"
+  },
+  {
+    "id": "noisy",
+    "en": "noisy",
+    "ipa": "/ˈnɔɪzi/",
+    "pos": "adjective",
+    "vi": "ồn ào",
+    "example": "The street is noisy at night.",
+    "exampleVi": "Đường phố ồn ào vào ban đêm.",
+    "level": "A2"
+  },
+  {
+    "id": "practice",
+    "en": "practice",
+    "ipa": "/ˈpræktɪs/",
+    "pos": "noun",
+    "vi": "sự luyện tập",
+    "example": "Practice helps you remember.",
+    "exampleVi": "Luyện tập giúp bạn nhớ.",
+    "level": "A2"
+  },
+  {
+    "id": "quiet",
+    "en": "quiet",
+    "ipa": "/ˈkwaɪət/",
+    "pos": "adjective",
+    "vi": "yên tĩnh",
+    "example": "The library is quiet.",
+    "exampleVi": "Thư viện yên tĩnh.",
+    "level": "A2"
+  },
+  {
+    "id": "remember",
+    "en": "remember",
+    "ipa": "/rɪˈmembə/",
+    "pos": "verb",
+    "vi": "nhớ",
+    "example": "I remember your name.",
+    "exampleVi": "Tôi nhớ tên bạn.",
+    "level": "A2"
+  },
+  {
+    "id": "ticket",
+    "en": "ticket",
+    "ipa": "/ˈtɪkɪt/",
+    "pos": "noun",
+    "vi": "vé",
+    "example": "I bought a ticket online.",
+    "exampleVi": "Tôi mua vé trên mạng.",
+    "level": "A2"
+  },
+  {
+    "id": "travel",
+    "en": "travel",
+    "ipa": "/ˈtrævl/",
+    "pos": "verb",
+    "vi": "đi du lịch",
+    "example": "They travel by train.",
+    "exampleVi": "Họ đi du lịch bằng tàu hỏa.",
+    "level": "A2"
+  },
+  {
+    "id": "weather",
+    "en": "weather",
+    "ipa": "/ˈweðə/",
+    "pos": "noun",
+    "vi": "thời tiết",
+    "example": "The weather is hot today.",
+    "exampleVi": "Hôm nay thời tiết nóng.",
+    "level": "A2"
+  },
+  {
+    "id": "achieve",
+    "en": "achieve",
+    "ipa": "/əˈtʃiːv/",
+    "pos": "verb",
+    "vi": "đạt được",
+    "example": "She worked hard to achieve her goal.",
+    "exampleVi": "Cô ấy đã làm việc chăm chỉ để đạt được mục tiêu.",
+    "level": "B1"
+  },
+  {
+    "id": "advice",
+    "en": "advice",
+    "ipa": "/ədˈvaɪs/",
+    "pos": "noun",
+    "vi": "lời khuyên",
+    "example": "Thank you for the advice.",
+    "exampleVi": "Cảm ơn lời khuyên của bạn.",
+    "level": "B1"
+  },
+  {
+    "id": "although",
+    "en": "although",
+    "ipa": "/ɔːlˈðəʊ/",
+    "pos": "conjunction",
+    "vi": "mặc dù",
+    "example": "Although it rained, we went out.",
+    "exampleVi": "Mặc dù trời mưa, chúng tôi vẫn ra ngoài.",
+    "level": "B1"
+  },
+  {
+    "id": "available",
+    "en": "available",
+    "ipa": "/əˈveɪləbl/",
+    "pos": "adjective",
+    "vi": "có sẵn",
+    "example": "This book is available at the library.",
+    "exampleVi": "Quyển sách này có sẵn ở thư viện.",
+    "level": "B1"
+  },
+  {
+    "id": "benefit",
+    "en": "benefit",
+    "ipa": "/ˈbenɪfɪt/",
+    "pos": "noun",
+    "vi": "lợi ích",
+    "example": "Exercise has a clear benefit.",
+    "exampleVi": "Tập thể dục có một lợi ích rõ ràng.",
+    "level": "B1"
+  },
+  {
+    "id": "challenge",
+    "en": "challenge",
+    "ipa": "/ˈtʃælɪndʒ/",
+    "pos": "noun",
+    "vi": "thử thách",
+    "example": "The exam was a real challenge.",
+    "exampleVi": "Kỳ thi đó là một thử thách thật sự.",
+    "level": "B1"
+  },
+  {
+    "id": "compare",
+    "en": "compare",
+    "ipa": "/kəmˈpeə/",
+    "pos": "verb",
+    "vi": "so sánh",
+    "example": "Compare the two prices first.",
+    "exampleVi": "Hãy so sánh hai mức giá trước.",
+    "level": "B1"
+  },
+  {
+    "id": "consider",
+    "en": "consider",
+    "ipa": "/kənˈsɪdə/",
+    "pos": "verb",
+    "vi": "cân nhắc",
+    "example": "Please consider both options.",
+    "exampleVi": "Hãy cân nhắc cả hai lựa chọn.",
+    "level": "B1"
+  },
+  {
+    "id": "decision",
+    "en": "decision",
+    "ipa": "/dɪˈsɪʒn/",
+    "pos": "noun",
+    "vi": "quyết định",
+    "example": "It was a difficult decision.",
+    "exampleVi": "Đó là một quyết định khó.",
+    "level": "B1"
+  },
+  {
+    "id": "develop",
+    "en": "develop",
+    "ipa": "/dɪˈveləp/",
+    "pos": "verb",
+    "vi": "phát triển",
+    "example": "The city will develop a new park.",
+    "exampleVi": "Thành phố sẽ phát triển một công viên mới.",
+    "level": "B1"
+  },
+  {
+    "id": "encourage",
+    "en": "encourage",
+    "ipa": "/ɪnˈkʌrɪdʒ/",
+    "pos": "verb",
+    "vi": "khuyến khích",
+    "example": "Teachers encourage students to ask.",
+    "exampleVi": "Giáo viên khuyến khích học sinh đặt câu hỏi.",
+    "level": "B1"
+  },
+  {
+    "id": "environment",
+    "en": "environment",
+    "ipa": "/ɪnˈvaɪrənmənt/",
+    "pos": "noun",
+    "vi": "môi trường",
+    "example": "We should protect the environment.",
+    "exampleVi": "Chúng ta nên bảo vệ môi trường.",
+    "level": "B1"
+  },
+  {
+    "id": "experience",
+    "en": "experience",
+    "ipa": "/ɪkˈspɪəriəns/",
+    "pos": "noun",
+    "vi": "kinh nghiệm",
+    "example": "She has experience as a teacher.",
+    "exampleVi": "Cô ấy có kinh nghiệm làm giáo viên.",
+    "level": "B1"
+  },
+  {
+    "id": "improve",
+    "en": "improve",
+    "ipa": "/ɪmˈpruːv/",
+    "pos": "verb",
+    "vi": "cải thiện",
+    "example": "Daily practice will improve your listening.",
+    "exampleVi": "Luyện tập mỗi ngày sẽ cải thiện khả năng nghe.",
+    "level": "B1"
+  },
+  {
+    "id": "manage",
+    "en": "manage",
+    "ipa": "/ˈmænɪdʒ/",
+    "pos": "verb",
+    "vi": "xoay xở",
+    "example": "He managed to finish on time.",
+    "exampleVi": "Anh ấy đã xoay xở để hoàn thành đúng giờ.",
+    "level": "B1"
+  },
+  {
+    "id": "opportunity",
+    "en": "opportunity",
+    "ipa": "/ˌɒpəˈtjuːnəti/",
+    "pos": "noun",
+    "vi": "cơ hội",
+    "example": "This job is a good opportunity.",
+    "exampleVi": "Công việc này là một cơ hội tốt.",
+    "level": "B1"
+  },
+  {
+    "id": "population",
+    "en": "population",
+    "ipa": "/ˌpɒpjuˈleɪʃn/",
+    "pos": "noun",
+    "vi": "dân số",
+    "example": "The population of the town is growing.",
+    "exampleVi": "Dân số của thị trấn đang tăng.",
+    "level": "B1"
+  },
+  {
+    "id": "prevent",
+    "en": "prevent",
+    "ipa": "/prɪˈvent/",
+    "pos": "verb",
+    "vi": "ngăn chặn",
+    "example": "A lock can prevent theft.",
+    "exampleVi": "Một ổ khóa có thể ngăn trộm.",
+    "level": "B1"
+  },
+  {
+    "id": "quality",
+    "en": "quality",
+    "ipa": "/ˈkwɒləti/",
+    "pos": "noun",
+    "vi": "chất lượng",
+    "example": "The quality of the water is good.",
+    "exampleVi": "Chất lượng nước tốt.",
+    "level": "B1"
+  },
+  {
+    "id": "require",
+    "en": "require",
+    "ipa": "/rɪˈkwaɪə/",
+    "pos": "verb",
+    "vi": "yêu cầu",
+    "example": "The form requires your address.",
+    "exampleVi": "Mẫu đơn yêu cầu địa chỉ của bạn.",
+    "level": "B1"
+  },
+  {
+    "id": "significant",
+    "en": "significant",
+    "ipa": "/sɪɡˈnɪfɪkənt/",
+    "pos": "adjective",
+    "vi": "đáng kể",
+    "example": "There was a significant change.",
+    "exampleVi": "Đã có một thay đổi đáng kể.",
+    "level": "B1"
+  },
+  {
+    "id": "suggest",
+    "en": "suggest",
+    "ipa": "/səˈdʒest/",
+    "pos": "verb",
+    "vi": "gợi ý",
+    "example": "I suggest a short break.",
+    "exampleVi": "Tôi gợi ý nghỉ một chút.",
+    "level": "B1"
+  },
+  {
+    "id": "therefore",
+    "en": "therefore",
+    "ipa": "/ˈðeəfɔː/",
+    "pos": "adverb",
+    "vi": "do đó",
+    "example": "It was late; therefore we left.",
+    "exampleVi": "Đã muộn; do đó chúng tôi ra về.",
+    "level": "B1"
+  },
+  {
+    "id": "various",
+    "en": "various",
+    "ipa": "/ˈveəriəs/",
+    "pos": "adjective",
+    "vi": "nhiều loại",
+    "example": "The shop sells various teas.",
+    "exampleVi": "Cửa hàng bán nhiều loại trà.",
+    "level": "B1"
+  },
+  {
+    "id": "acknowledge",
+    "en": "acknowledge",
+    "ipa": "/əkˈnɒlɪdʒ/",
+    "pos": "verb",
+    "vi": "thừa nhận",
+    "example": "She acknowledged the mistake.",
+    "exampleVi": "Cô ấy đã thừa nhận lỗi.",
+    "level": "B2"
+  },
+  {
+    "id": "acquire",
+    "en": "acquire",
+    "ipa": "/əˈkwaɪə/",
+    "pos": "verb",
+    "vi": "thu được",
+    "example": "He acquired the skill at work.",
+    "exampleVi": "Anh ấy thu được kỹ năng đó khi đi làm.",
+    "level": "B2"
+  },
+  {
+    "id": "adequate",
+    "en": "adequate",
+    "ipa": "/ˈædɪkwət/",
+    "pos": "adjective",
+    "vi": "đầy đủ",
+    "example": "The report is adequate for now.",
+    "exampleVi": "Bản báo cáo đủ dùng cho lúc này.",
+    "level": "B2"
+  },
+  {
+    "id": "anticipate",
+    "en": "anticipate",
+    "ipa": "/ænˈtɪsɪpeɪt/",
+    "pos": "verb",
+    "vi": "dự đoán",
+    "example": "We anticipate a busy week.",
+    "exampleVi": "Chúng tôi dự đoán một tuần bận rộn.",
+    "level": "B2"
+  },
+  {
+    "id": "coherent",
+    "en": "coherent",
+    "ipa": "/kəʊˈhɪərənt/",
+    "pos": "adjective",
+    "vi": "mạch lạc",
+    "example": "Write a coherent paragraph.",
+    "exampleVi": "Hãy viết một đoạn văn mạch lạc.",
+    "level": "B2"
+  },
+  {
+    "id": "compensate",
+    "en": "compensate",
+    "ipa": "/ˈkɒmpenseɪt/",
+    "pos": "verb",
+    "vi": "bù đắp",
+    "example": "Nothing can compensate for the delay.",
+    "exampleVi": "Không gì bù đắp được sự chậm trễ.",
+    "level": "B2"
+  },
+  {
+    "id": "consequence",
+    "en": "consequence",
+    "ipa": "/ˈkɒnsɪkwəns/",
+    "pos": "noun",
+    "vi": "hậu quả",
+    "example": "Think about the consequence first.",
+    "exampleVi": "Hãy nghĩ đến hậu quả trước.",
+    "level": "B2"
+  },
+  {
+    "id": "criterion",
+    "en": "criterion",
+    "ipa": "/kraɪˈtɪəriən/",
+    "pos": "noun",
+    "vi": "tiêu chí",
+    "example": "Cost is only one criterion.",
+    "exampleVi": "Chi phí chỉ là một tiêu chí.",
+    "level": "B2"
+  },
+  {
+    "id": "elaborate",
+    "en": "elaborate",
+    "ipa": "/ɪˈlæbəreɪt/",
+    "pos": "verb",
+    "vi": "trình bày chi tiết",
+    "example": "Could you elaborate on that point?",
+    "exampleVi": "Bạn trình bày chi tiết ý đó được không?",
+    "level": "B2"
+  },
+  {
+    "id": "fluctuate",
+    "en": "fluctuate",
+    "ipa": "/ˈflʌktʃueɪt/",
+    "pos": "verb",
+    "vi": "dao động",
+    "example": "Prices fluctuate during the year.",
+    "exampleVi": "Giá dao động trong năm.",
+    "level": "B2"
+  },
+  {
+    "id": "hypothesis",
+    "en": "hypothesis",
+    "ipa": "/haɪˈpɒθəsɪs/",
+    "pos": "noun",
+    "vi": "giả thuyết",
+    "example": "The hypothesis needs a test.",
+    "exampleVi": "Giả thuyết đó cần được kiểm tra.",
+    "level": "B2"
+  },
+  {
+    "id": "implement",
+    "en": "implement",
+    "ipa": "/ˈɪmplɪment/",
+    "pos": "verb",
+    "vi": "triển khai",
+    "example": "The school will implement the plan.",
+    "exampleVi": "Nhà trường sẽ triển khai kế hoạch.",
+    "level": "B2"
+  },
+  {
+    "id": "inevitable",
+    "en": "inevitable",
+    "ipa": "/ɪnˈevɪtəbl/",
+    "pos": "adjective",
+    "vi": "không thể tránh khỏi",
+    "example": "Some mistakes are inevitable.",
+    "exampleVi": "Một số lỗi là không thể tránh khỏi.",
+    "level": "B2"
+  },
+  {
+    "id": "justify",
+    "en": "justify",
+    "ipa": "/ˈdʒʌstɪfaɪ/",
+    "pos": "verb",
+    "vi": "biện minh",
+    "example": "How do you justify the extra cost?",
+    "exampleVi": "Bạn biện minh cho khoản chi thêm thế nào?",
+    "level": "B2"
+  },
+  {
+    "id": "maintain",
+    "en": "maintain",
+    "ipa": "/meɪnˈteɪn/",
+    "pos": "verb",
+    "vi": "duy trì",
+    "example": "They maintain the old bridge.",
+    "exampleVi": "Họ duy trì chiếc cầu cũ.",
+    "level": "B2"
+  },
+  {
+    "id": "nonetheless",
+    "en": "nonetheless",
+    "ipa": "/ˌnʌnðəˈles/",
+    "pos": "adverb",
+    "vi": "dù vậy",
+    "example": "It was hard; nonetheless, she continued.",
+    "exampleVi": "Việc đó khó; dù vậy, cô ấy vẫn tiếp tục.",
+    "level": "B2"
+  },
+  {
+    "id": "perspective",
+    "en": "perspective",
+    "ipa": "/pəˈspektɪv/",
+    "pos": "noun",
+    "vi": "góc nhìn",
+    "example": "From his perspective, the rule is fair.",
+    "exampleVi": "Theo góc nhìn của anh ấy, quy tắc đó công bằng.",
+    "level": "B2"
+  },
+  {
+    "id": "preliminary",
+    "en": "preliminary",
+    "ipa": "/prɪˈlɪmɪnəri/",
+    "pos": "adjective",
+    "vi": "sơ bộ",
+    "example": "These are preliminary results.",
+    "exampleVi": "Đây là kết quả sơ bộ.",
+    "level": "B2"
+  },
+  {
+    "id": "reluctant",
+    "en": "reluctant",
+    "ipa": "/rɪˈlʌktənt/",
+    "pos": "adjective",
+    "vi": "miễn cưỡng",
+    "example": "He was reluctant to speak.",
+    "exampleVi": "Anh ấy miễn cưỡng khi phải nói.",
+    "level": "B2"
+  },
+  {
+    "id": "subsequent",
+    "en": "subsequent",
+    "ipa": "/ˈsʌbsɪkwənt/",
+    "pos": "adjective",
+    "vi": "tiếp theo",
+    "example": "Subsequent meetings were shorter.",
+    "exampleVi": "Các cuộc họp tiếp theo ngắn hơn.",
+    "level": "B2"
+  },
+  {
+    "id": "undergo",
+    "en": "undergo",
+    "ipa": "/ˌʌndəˈɡəʊ/",
+    "pos": "verb",
+    "vi": "trải qua",
+    "example": "The building will undergo repairs.",
+    "exampleVi": "Tòa nhà sẽ trải qua đợt sửa chữa.",
+    "level": "B2"
+  },
+  {
+    "id": "undermine",
+    "en": "undermine",
+    "ipa": "/ˌʌndəˈmaɪn/",
+    "pos": "verb",
+    "vi": "làm suy yếu",
+    "example": "Rumors can undermine trust.",
+    "exampleVi": "Tin đồn có thể làm suy yếu lòng tin.",
+    "level": "B2"
+  },
+  {
+    "id": "versatile",
+    "en": "versatile",
+    "ipa": "/ˈvɜːsətaɪl/",
+    "pos": "adjective",
+    "vi": "linh hoạt",
+    "example": "A versatile tool has many uses.",
+    "exampleVi": "Một dụng cụ linh hoạt có nhiều công dụng.",
+    "level": "B2"
+  },
+  {
+    "id": "whereas",
+    "en": "whereas",
+    "ipa": "/weərˈæz/",
+    "pos": "conjunction",
+    "vi": "trong khi đó",
+    "example": "I prefer tea, whereas she prefers coffee.",
+    "exampleVi": "Tôi thích trà, trong khi đó cô ấy thích cà phê.",
+    "level": "B2"
+  },
+  {
+    "id": "arbitrary",
+    "en": "arbitrary",
+    "ipa": "/ˈɑːbɪtrəri/",
+    "pos": "adjective",
+    "vi": "tùy tiện",
+    "example": "The cutoff felt arbitrary.",
+    "exampleVi": "Ngưỡng đó có vẻ tùy tiện.",
+    "level": "C1"
+  },
+  {
+    "id": "comprehensive",
+    "en": "comprehensive",
+    "ipa": "/ˌkɒmprɪˈhensɪv/",
+    "pos": "adjective",
+    "vi": "toàn diện",
+    "example": "We need a comprehensive review.",
+    "exampleVi": "Chúng ta cần một bài ôn toàn diện.",
+    "level": "C1"
+  },
+  {
+    "id": "detrimental",
+    "en": "detrimental",
+    "ipa": "/ˌdetrɪˈmentl/",
+    "pos": "adjective",
+    "vi": "có hại",
+    "example": "Lack of sleep is detrimental.",
+    "exampleVi": "Thiếu ngủ thì có hại.",
+    "level": "C1"
+  },
+  {
+    "id": "exacerbate",
+    "en": "exacerbate",
+    "ipa": "/ɪɡˈzæsəbeɪt/",
+    "pos": "verb",
+    "vi": "làm trầm trọng thêm",
+    "example": "The delay exacerbated the problem.",
+    "exampleVi": "Sự chậm trễ làm vấn đề trầm trọng thêm.",
+    "level": "C1"
+  },
+  {
+    "id": "feasible",
+    "en": "feasible",
+    "ipa": "/ˈfiːzəbl/",
+    "pos": "adjective",
+    "vi": "khả thi",
+    "example": "The plan is feasible this year.",
+    "exampleVi": "Kế hoạch khả thi trong năm nay.",
+    "level": "C1"
+  },
+  {
+    "id": "inherent",
+    "en": "inherent",
+    "ipa": "/ɪnˈhɪərənt/",
+    "pos": "adjective",
+    "vi": "vốn có",
+    "example": "There is an inherent risk.",
+    "exampleVi": "Có một rủi ro vốn có.",
+    "level": "C1"
+  },
+  {
+    "id": "meticulous",
+    "en": "meticulous",
+    "ipa": "/məˈtɪkjələs/",
+    "pos": "adjective",
+    "vi": "tỉ mỉ",
+    "example": "She keeps meticulous notes.",
+    "exampleVi": "Cô ấy ghi chép rất tỉ mỉ.",
+    "level": "C1"
+  },
+  {
+    "id": "mitigate",
+    "en": "mitigate",
+    "ipa": "/ˈmɪtɪɡeɪt/",
+    "pos": "verb",
+    "vi": "giảm nhẹ",
+    "example": "Trees can mitigate the heat.",
+    "exampleVi": "Cây xanh có thể giảm bớt cái nóng.",
+    "level": "C1"
+  },
+  {
+    "id": "negligible",
+    "en": "negligible",
+    "ipa": "/ˈneɡlɪdʒəbl/",
+    "pos": "adjective",
+    "vi": "không đáng kể",
+    "example": "The difference is negligible.",
+    "exampleVi": "Mức chênh lệch không đáng kể.",
+    "level": "C1"
+  },
+  {
+    "id": "plausible",
+    "en": "plausible",
+    "ipa": "/ˈplɔːzəbl/",
+    "pos": "adjective",
+    "vi": "hợp lý",
+    "example": "That explanation sounds plausible.",
+    "exampleVi": "Lời giải thích đó nghe hợp lý.",
+    "level": "C1"
+  },
+  {
+    "id": "pragmatic",
+    "en": "pragmatic",
+    "ipa": "/præɡˈmætɪk/",
+    "pos": "adjective",
+    "vi": "thực dụng",
+    "example": "We need a pragmatic solution.",
+    "exampleVi": "Chúng ta cần một giải pháp thực dụng.",
+    "level": "C1"
+  },
+  {
+    "id": "prevalent",
+    "en": "prevalent",
+    "ipa": "/ˈprevələnt/",
+    "pos": "adjective",
+    "vi": "phổ biến",
+    "example": "This belief is still prevalent.",
+    "exampleVi": "Niềm tin này vẫn còn phổ biến.",
+    "level": "C1"
+  },
+  {
+    "id": "profound",
+    "en": "profound",
+    "ipa": "/prəˈfaʊnd/",
+    "pos": "adjective",
+    "vi": "sâu sắc",
+    "example": "The book had a profound effect.",
+    "exampleVi": "Cuốn sách có một ảnh hưởng sâu sắc.",
+    "level": "C1"
+  },
+  {
+    "id": "scrutinize",
+    "en": "scrutinize",
+    "ipa": "/ˈskruːtənaɪz/",
+    "pos": "verb",
+    "vi": "xem xét kỹ",
+    "example": "The editor scrutinized every line.",
+    "exampleVi": "Biên tập viên xem xét kỹ từng dòng.",
+    "level": "C1"
+  },
+  {
+    "id": "ubiquitous",
+    "en": "ubiquitous",
+    "ipa": "/juːˈbɪkwɪtəs/",
+    "pos": "adjective",
+    "vi": "có mặt khắp nơi",
+    "example": "Phones are ubiquitous in the city.",
+    "exampleVi": "Điện thoại có mặt khắp nơi trong thành phố.",
+    "level": "C1"
+  },
+  {
+    "id": "unprecedented",
+    "en": "unprecedented",
+    "ipa": "/ʌnˈpresɪdentɪd/",
+    "pos": "adjective",
+    "vi": "chưa từng có",
+    "example": "The storm caused unprecedented damage.",
+    "exampleVi": "Cơn bão gây thiệt hại chưa từng có.",
+    "level": "C1"
+  }
+]

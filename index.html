@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c5c56">
+  <meta name="description" content="FlashFree — thẻ từ vựng tiếng Anh và tiếng Việt. Tiến độ lưu trên máy này.">
+  <meta name="apple-mobile-web-app-title" content="FlashFree">
+  <title>FlashFree</title>
+  <script>
+    (function () {
+      var path = location.pathname;
+      if (path.endsWith("/")) return;
+      var last = path.split("/").pop() || "";
+      if (/\.[a-z0-9]+$/i.test(last)) return;
+      location.replace(path + "/" + location.search + location.hash);
+    })();
+  </script>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <a class="brand" href="#decks">FlashFree</a>
+      <nav class="nav" aria-label="Mục">
+        <a href="#decks" data-nav="decks">Bộ từ</a>
+        <a href="#stats" data-nav="stats">Thống kê</a>
+        <a href="#credits" data-nav="credits">Nguồn</a>
+      </nav>
+    </header>
+
+    <p id="load-error" class="banner" hidden>
+      FlashFree không tải được danh sách từ. Hãy mở trang bằng một máy chủ tĩnh, ví dụ
+      <code>python3 -m http.server</code>, rồi vào đúng thư mục của trang.
+    </p>
+
+    <main>
+      <section id="view-decks" data-view="decks">
+        <h1>Chọn bộ từ</h1>
+        <p class="lede">Tiếng Anh ở mặt trước, tiếng Việt ở mặt sau. Chọn một hoặc nhiều trình độ.</p>
+        <div id="level-chips" class="chips" role="group" aria-label="Trình độ"></div>
+        <p id="deck-count" class="count"></p>
+        <button type="button" id="start" class="primary">Bắt đầu</button>
+      </section>
+
+      <section id="view-study" data-view="study" hidden>
+        <p id="study-meta" class="meta"></p>
+        <div id="study-done" class="done" hidden>
+          <h2>Hết bộ rồi</h2>
+          <p>Mọi từ trong bộ đang chọn đều được đánh dấu là đã biết.</p>
+          <button type="button" id="review-all" class="primary">Ôn lại</button>
+          <a class="text-link" href="#decks">Đổi bộ từ</a>
+        </div>
+        <div id="study-card">
+          <div id="swipe" class="swipe">
+            <span id="stamp-known" class="stamp stamp-known" aria-hidden="true">Biết</span>
+            <span id="stamp-unknown" class="stamp stamp-unknown" aria-hidden="true">Chưa biết</span>
+            <div id="card" class="card-scene" role="button" tabindex="0" aria-label="Lật thẻ">
+              <div id="card-inner" class="card-inner">
+                <div class="face face-front">
+                  <p class="side">Tiếng Anh</p>
+                  <p id="card-level" class="pill"></p>
+                  <p id="card-pos" class="pos"></p>
+                  <p id="card-word" class="word"></p>
+                  <p id="card-ipa" class="ipa"></p>
+                </div>
+                <div class="face face-back">
+                  <p class="side">Tiếng Việt</p>
+                  <p id="card-vi" class="word word-vi"></p>
+                  <p id="card-example" class="example"></p>
+                  <p id="card-example-vi" class="example example-vi"></p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="hint">Chạm để lật. Vuốt trái: Chưa biết. Vuốt phải: Biết.</p>
+          <div class="actions">
+            <button type="button" id="btn-unknown" class="choice choice-unknown">Chưa biết</button>
+            <button type="button" id="btn-known" class="choice choice-known">Biết</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-stats" data-view="stats" hidden>
+        <h1>Thống kê</h1>
+        <p class="brand-line">FlashFree</p>
+        <p id="stat-scope" class="lede"></p>
+        <dl class="stats">
+          <div><dt>Đã biết</dt><dd id="stat-known">0</dd></div>
+          <div><dt>Chưa biết</dt><dd id="stat-unknown">0</dd></div>
+          <div><dt>Chưa học</dt><dd id="stat-unseen">0</dd></div>
+          <div><dt>Lượt trả lời</dt><dd id="stat-reviewed">0</dd></div>
+        </dl>
+        <h2>Theo trình độ</h2>
+        <ul id="stat-levels" class="levels"></ul>
+        <div id="reset-box" class="reset-box">
+          <button type="button" id="reset" class="ghost">Xóa tiến độ</button>
+          <div id="reset-confirm" hidden>
+            <p>Xóa hết tiến độ của FlashFree trên máy này?</p>
+            <div class="actions">
+              <button type="button" id="reset-cancel" class="ghost">Hủy</button>
+              <button type="button" id="reset-yes" class="choice choice-unknown">Xóa</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-credits" data-view="credits" hidden>
+        <h1>Nguồn</h1>
+        <p class="brand-line">FlashFree</p>
+        <h2>Từ vựng</h2>
+        <p>
+          Nghĩa tiếng Việt, câu ví dụ và nhãn trình độ trong FlashFree được soạn cho ứng dụng này.
+          Nhãn A1–C1 là các nhóm học gần đúng, không phải English Vocabulary Profile của Cambridge
+          và không lấy từ các danh sách từ của Oxford.
+        </p>
+        <p>
+          Danh sách gốc nằm trong <code>scripts/build_vocab.py</code> và được ghi ra
+          <code>data/vocab.json</code>. Chi tiết ở <code>DATA_SOURCES.md</code>.
+        </p>
+        <h2>Chữ</h2>
+        <p>
+          Be Vietnam Pro, bản quyền 2021 The Be Vietnam Pro Project Authors
+          (<a href="https://github.com/bettergui/BeVietnamPro">bettergui/BeVietnamPro</a>),
+          phát hành theo SIL Open Font License 1.1. Bản giấy phép nằm trong <code>fonts/OFL.txt</code>.
+        </p>
+        <h2>Máy này</h2>
+        <p>
+          FlashFree là trang tĩnh. Không có tài khoản và không gửi từ hay tiến độ đi đâu.
+          Biết / Chưa biết được lưu trong trình duyệt này bằng localStorage.
+        </p>
+      </section>
+    </main>
+  </div>
+  <script src="js/app.js"></script>
+</body>
+</html>
