@@ -580,6 +580,23 @@ main {
   font-size: 1.6rem;
   flex: none;
 }
+.calnav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+.calnav button {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.calnav strong { font-size: 0.95rem; }
 .calhead, .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .calhead span { text-align: center; font-size: 0.68rem; color: var(--muted); }
 .cal i {

@@ -4,6 +4,8 @@ import test from "node:test";
 import { firebaseReady } from "../js/firebase-config.js";
 import {
   STREAK_MIN,
+  calendarKind,
+  earliestStudyDay,
   chunkMap,
   masteredCount,
   medalValues,
@@ -19,6 +21,18 @@ import {
 test("an empty Firebase config stays guest-only", () => {
   assert.equal(firebaseReady({ apiKey: "", authDomain: "", projectId: "", appId: "" }), false);
   assert.equal(firebaseReady({ apiKey: "YOUR_API_KEY", authDomain: "x.firebaseapp.com", projectId: "demo", appId: "1:2:web:abcdef" }), false);
+});
+
+test("calendar stays neutral before the first study day and in the future", () => {
+  assert.equal(earliestStudyDay({}), "");
+  assert.equal(earliestStudyDay({ "2026-11-10": { reviews: 3 } }), "2026-11-10");
+  assert.equal(calendarKind("2026-11-09", "2026-11-14", "2026-11-10", {}), "");
+  assert.equal(calendarKind("2026-11-10", "2026-11-14", "2026-11-10", { reviews: 4 }), "missed");
+  assert.equal(calendarKind("2026-11-11", "2026-11-14", "2026-11-10", { reviews: 20 }), "studied");
+  assert.equal(calendarKind("2026-11-12", "2026-11-14", "2026-11-10", { reviews: 0, frozen: true }), "frozen");
+  assert.equal(calendarKind("2026-11-14", "2026-11-14", "2026-11-10", { reviews: 2 }), "");
+  assert.equal(calendarKind("2026-11-20", "2026-11-14", "2026-11-10", {}), "");
+  assert.equal(calendarKind("2026-11-01", "2026-11-14", "", {}), "");
 });
 
 test("a day counts only at the 20-card line", () => {

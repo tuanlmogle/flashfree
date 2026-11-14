@@ -2,7 +2,7 @@
    A failed card is shown once more in the same session; the stored grade stays the first answer. */
 
 import { accountEnabled, bindAccount, currentUser, scheduleSync, signInGoogle, signOutGoogle } from "./account.js";
-import { STREAK_MIN, medalValues, shareLink, streakFromLog } from "./progress.js";
+import { STREAK_MIN, calendarKind, earliestStudyDay, medalValues, shareLink, streakFromLog } from "./progress.js";
 
 const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const LEVEL_NAME = {
@@ -126,6 +126,7 @@ const loadedTopicFiles = new Set();
 const listenRun = { token: 0, timer: 0, playing: false };
 let EMOJI_INDEX = {};
 let picPrefs = {};
+let profileMonth = "";
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -178,6 +179,7 @@ function defaultState() {
     shared: 0,
     invites: 0,
     localId: "",
+    firstStudy: "",
     updatedAt: 0,
   };
 }
@@ -262,6 +264,7 @@ function loadState() {
       shared: Math.max(0, Number(parsed.shared) || 0),
       invites: Math.max(0, Number(parsed.invites) || 0),
       localId: typeof parsed.localId === "string" && parsed.localId ? parsed.localId : makeLocalId(),
+      firstStudy: /^\d{4}-\d{2}-\d{2}$/.test(parsed.firstStudy || "") ? parsed.firstStudy : "",
       updatedAt: Math.max(0, Number(parsed.updatedAt) || 0),
     });
   } catch {
@@ -271,6 +274,8 @@ function loadState() {
 
 function applyStreakFromLog(state) {
   if (!state.localId) state.localId = makeLocalId();
+  const fromLog = earliestStudyDay(state.log);
+  if (fromLog && (!state.firstStudy || fromLog < state.firstStudy)) state.firstStudy = fromLog;
   const computed = streakFromLog(state.log || {}, todayISO());
   const migrated = !state.freeze || state.freeze.rule !== STREAK_MIN;
   state.freeze.streak = computed.streak;
@@ -776,6 +781,7 @@ function bumpLog(know) {
   row.reviews += 1;
   if (know) row.correct += 1;
   STATE.log[today] = row;
+  if (!STATE.firstStudy || today < STATE.firstStudy) STATE.firstStudy = today;
 }
 
 function bumpAdded() {
@@ -1838,25 +1844,49 @@ function renderCredits() {
   topmeta.textContent = "Giấy phép và trích dẫn";
 }
 
+function monthTitle(ym) {
+  const [year, month] = ym.split("-");
+  return `Tháng ${Number(month)} năm ${year}`;
+}
+
+function shownMonth() {
+  const today = todayISO().slice(0, 7);
+  return profileMonth && profileMonth <= today ? profileMonth : today;
+}
+
+function shiftMonth(ym, delta) {
+  const [year, month] = ym.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 function monthCells() {
   const today = todayISO();
-  const [year, month] = today.split("-").map(Number);
+  const shown = shownMonth();
+  const [year, month] = shown.split("-").map(Number);
   const first = new Date(Date.UTC(year, month - 1, 1));
   const pad = first.getUTCDay();
   const count = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const start = STATE.firstStudy || earliestStudyDay(STATE.log);
   const cells = [];
   for (let i = 0; i < pad; i += 1) cells.push(`<i class="empty"></i>`);
   for (let day = 1; day <= count; day += 1) {
     const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const row = STATE.log[iso] || {};
-    let kind = "";
-    if ((row.reviews || 0) >= STREAK_MIN) kind = "studied";
-    else if (row.frozen) kind = "frozen";
-    else if (iso < today) kind = "missed";
+    const kind = calendarKind(iso, today, start, STATE.log[iso]);
     const todayMark = iso === today ? " today" : "";
     cells.push(`<i class="${kind}${todayMark}" title="${iso}">${day}</i>`);
   }
   return cells.join("");
+}
+
+function shiftProfileMonth(delta) {
+  const today = todayISO().slice(0, 7);
+  const next = shiftMonth(shownMonth(), delta);
+  if (next > today) return;
+  profileMonth = next;
+  const top = main.scrollTop;
+  render();
+  main.scrollTop = top;
 }
 
 function medalCards() {
@@ -1950,8 +1980,13 @@ function renderProfile() {
       <article class="stat"><div class="k">Dài nhất</div><div class="v">${best}</div></article>
     </div>
     <p class="note">Một ngày vào chuỗi khi bạn vuốt hoặc trả lời ít nhất ${STREAK_MIN} thẻ. Hôm nay: ${todayCount}/${STREAK_MIN}. Ngày đóng băng vẫn giữ chuỗi.</p>
+    <div class="calnav">
+      <button type="button" data-act="cal-prev" aria-label="Tháng trước">‹</button>
+      <strong>${esc(monthTitle(shownMonth()))}</strong>
+      <button type="button" data-act="cal-next" aria-label="Tháng sau" ${shownMonth() >= today.slice(0, 7) ? "disabled" : ""}>›</button>
+    </div>
     <div class="calhead">${WEEK.map((label) => `<span>${label}</span>`).join("")}</div>
-    <div class="cal" aria-label="Lịch tháng này">${monthCells()}</div>
+    <div class="cal" aria-label="${esc(monthTitle(shownMonth()))}">${monthCells()}</div>
     <p class="legend"><i class="studied"></i> Đủ ${STREAK_MIN} thẻ <i class="frozen"></i> Đóng băng <i class="missed"></i> Chưa đủ</p>
     <h2 class="section-title">Huy chương</h2>
     <div class="medals">${medalCards()}</div>
@@ -2551,8 +2586,17 @@ document.addEventListener("click", (event) => {
     grade(name === "know");
   }
   if (name === "profile") {
+    profileMonth = "";
     view = "profile";
     render();
+    return;
+  }
+  if (name === "cal-prev") {
+    shiftProfileMonth(-1);
+    return;
+  }
+  if (name === "cal-next") {
+    shiftProfileMonth(1);
     return;
   }
   if (name === "sign-in") {
@@ -2724,6 +2768,7 @@ async function boot() {
           shared: STATE.shared || 0,
           invites: STATE.invites || 0,
           localId: STATE.localId,
+          firstStudy: STATE.firstStudy || "",
           picPrefs,
           updatedAt: STATE.updatedAt || 0,
         };
@@ -2744,6 +2789,7 @@ async function boot() {
         STATE.shared = next.shared || 0;
         STATE.invites = next.invites || 0;
         STATE.localId = next.localId || STATE.localId;
+        STATE.firstStudy = next.firstStudy || STATE.firstStudy || "";
         picPrefs = next.picPrefs || {};
         savePicPrefs();
         applyStreakFromLog(STATE);

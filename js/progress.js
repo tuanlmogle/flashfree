@@ -16,6 +16,26 @@ export function qualifies(row) {
   return (row.reviews || 0) >= STREAK_MIN || !!row.frozen;
 }
 
+export function earliestStudyDay(log) {
+  let earliest = "";
+  for (const [day, row] of Object.entries(log || {})) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    if (!(row && row.reviews > 0)) continue;
+    if (!earliest || day < earliest) earliest = day;
+  }
+  return earliest;
+}
+
+/** studied | frozen | missed | "" (neutral: before the first study day, today still open, or a future day). */
+export function calendarKind(iso, today, firstStudy, row) {
+  const reviews = (row && row.reviews) || 0;
+  if (!iso || iso > today || !firstStudy || iso < firstStudy) return "";
+  if (reviews >= STREAK_MIN) return "studied";
+  if (row && row.frozen) return "frozen";
+  if (iso < today) return "missed";
+  return "";
+}
+
 export function streakFromLog(log, today) {
   const book = log && typeof log === "object" ? log : {};
   let day = today;
@@ -230,6 +250,7 @@ export function mergeStates(local, cloud, today) {
     shared: Math.max(left.shared || 0, right.shared || 0),
     invites: Math.max(left.invites || 0, right.invites || 0),
     localId: left.localId || right.localId || "",
+    firstStudy: [left.firstStudy, right.firstStudy, earliestStudyDay(log)].filter(Boolean).sort()[0] || "",
     picPrefs: mergePrefs(left.picPrefs, right.picPrefs, localWins),
     updatedAt: Date.now(),
   };
