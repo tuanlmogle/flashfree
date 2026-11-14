@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import build_fields
 import build_pictures
 import build_vocab
 import validate_vocab
@@ -28,6 +29,7 @@ def main() -> None:
     try:
         build_vocab.main()
         build_pictures.main()
+        build_fields.main()
         validate_vocab.main()
     finally:
         if snapshot.exists():

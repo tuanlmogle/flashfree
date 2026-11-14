@@ -104,6 +104,22 @@ Máy không tải cả bộ ảnh vào repo. `data/emoji-index.json` chỉ ghi m
 
 Đã kiểm tra Fluent: file `LICENSE` ở gốc kho là MIT, và URL `.../Red apple/3D/red_apple_3d.png` trả về 200. Twemoji: README nói graphics licensed under CC-BY 4.0. Noto: README nói Open Font License 1.1.
 
+## 6d. Từ chuyên ngành (Ngành nghề)
+
+Các file `data/fields/*.json` chỉ tải khi người học mở chủ đề đó, hoặc tải nền sau màn hình đầu. Id thẻ cũ trong `data/level-*.json` không đổi; script chỉ thêm mã chủ đề.
+
+| Nguồn | Dùng để | Giấy phép |
+|---|---|---|
+| NGSL, NAWL, BSL, TSL — Charles Browne, Brent Culligan, Joseph Phillips | Gắn từ học thuật, thương mại, TOEIC vào ngành khi từ khớp lĩnh vực | **CC BY-SA 4.0**. Trang https://www.newgeneralservicelist.com/ ghi dùng tự do, kể cả thương mại, nếu ghi công. Bản mirror TextMeter cũng ghi CC BY-SA 4.0. Không dùng Coxhead AWL hay danh sách Oxford/Cambridge. |
+| Trang Glossary của Wikipedia tiếng Anh và phụ lục thuật ngữ Wiktionary tiếng Anh | Thuật ngữ, kể cả cụm nhiều chữ, cùng câu giải nghĩa ngắn | **CC BY-SA 4.0** |
+| MeSH 2025 (Medical Subject Headings), Thư viện Y khoa Quốc gia Hoa Kỳ | Thuật ngữ y, giải phẫu, dược, nha, điều dưỡng | Phạm vi công cộng (tác phẩm của chính phủ Hoa Kỳ). https://www.nlm.nih.gov/mesh/ |
+| Open English WordNet 2024 | Thêm từ chuyên hơn bằng quan hệ hạ vị (hyponym) và câu giải nghĩa tiếng Anh khi không có tiếng Việt | **CC BY 4.0** |
+| Wiktionary tiếng Việt (kaikki) | Nghĩa tiếng Việt của từ mới | **CC BY-SA 4.0** và GFDL |
+| Tatoeba | Câu ví dụ khi có | **CC BY 2.0 FR** |
+| wordfreq (Robyn Speer) | Xếp mức CEFR cho từ không có trong CEFR-J hoặc Octanove | **CC BY-SA 4.0** |
+
+Mức chính thức của CEFR-J và Octanove được giữ. Từ chuyên ngành không có mức chính thức dùng cùng các ngưỡng Zipf trong `scripts/build_vocab.py` (C1 từ 2.70).
+
 ## 6c. Open English WordNet, mục phân loại
 
 | | |

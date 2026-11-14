@@ -168,11 +168,27 @@ button:focus-visible, a:focus-visible {
 }
 .top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: calc(14px + env(safe-area-inset-top, 0px)) 18px 8px;
 }
+.brandwrap { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--teal);
+  color: var(--primary-fg);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  overflow: hidden;
+  flex: none;
+  font-weight: 700;
+}
+.avatar img, .profile-photo { width: 100%; height: 100%; object-fit: cover; }
 .brand {
   font-family: var(--serif);
   font-weight: 640;
@@ -551,6 +567,44 @@ main {
 }
 .chip.on { background: var(--teal); color: var(--chip-on-fg); border-color: var(--teal); }
 .chip small { opacity: 0.8; }
+.who { display: flex; gap: 12px; align-items: center; }
+.profile-photo {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--teal);
+  color: var(--primary-fg);
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-size: 1.6rem;
+  flex: none;
+}
+.calhead, .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.calhead span { text-align: center; font-size: 0.68rem; color: var(--muted); }
+.cal i {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-style: normal;
+  font-size: 0.72rem;
+  background: var(--bg-deep);
+  color: var(--muted);
+}
+.cal i.empty { background: transparent; }
+.cal i.studied { background: var(--know); color: var(--know-fg); }
+.cal i.frozen { background: var(--teal); color: var(--primary-fg); }
+.cal i.missed { background: var(--miss-soft); color: var(--miss); }
+.cal i.today { outline: 2px solid var(--ink); outline-offset: -2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; color: var(--muted); font-size: 0.82rem; }
+.legend i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+.legend i.studied { background: var(--know); }
+.legend i.frozen { background: var(--teal); }
+.legend i.missed { background: var(--miss-soft); }
+.medal-bar { height: 6px; border-radius: 99px; background: var(--bar-bg); overflow: hidden; margin-top: 6px; }
+.medal-bar span { display: block; height: 100%; background: var(--teal); }
+button:disabled { opacity: 0.55; }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .stat {
   background: var(--paper);
@@ -700,7 +754,7 @@ main {
   border: 3px solid #c8922a;
   box-shadow: inset 0 -6px 0 rgba(120, 70, 10, 0.16);
 }
-.medal b { display: block; margin-top: 6px; font-size: 0.75rem; }
+.medal b { display: block; margin-top: 6px; font-size: 0.75rem; overflow-wrap: anywhere; }
 .medal small { display: block; color: var(--muted); font-size: 0.66rem; }
 .medal.locked .medal-face {
   filter: grayscale(1);

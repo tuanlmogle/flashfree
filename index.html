@@ -30,7 +30,10 @@
 <body>
   <div class="app" id="app">
     <header class="top">
-      <div class="brand">FlashFree</div>
+      <div class="brandwrap">
+        <button type="button" class="avatar" data-act="profile" aria-label="Hồ sơ"><span>K</span></button>
+        <div class="brand">FlashFree</div>
+      </div>
       <div class="topside">
         <button type="button" class="addbtn" data-act="add-word" aria-label="Thêm từ của tôi">+</button>
         <p class="topmeta" id="topmeta"></p>
@@ -64,6 +67,6 @@
   <noscript>
     <p class="noscript">FlashFree cần JavaScript để lật thẻ và lưu tiến độ trên máy bạn. Nguồn: Wiktionary tiếng Việt (CC BY-SA 4.0), CEFR-J, Octanove, Tatoeba (CC BY 2.0 FR), wordfreq (CC BY-SA 4.0), Open English WordNet (CC BY 4.0), OpenMoji (CC BY-SA 4.0), Wikimedia Commons.</p>
   </noscript>
-  <script src="js/app.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>

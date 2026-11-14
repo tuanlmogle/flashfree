@@ -1,6 +1,9 @@
 /* FlashFree — SM-2 flashcards. Biết = grade 4, Chưa biết = grade 1.
    A failed card is shown once more in the same session; the stored grade stays the first answer. */
 
+import { accountEnabled, bindAccount, currentUser, scheduleSync, signInGoogle, signOutGoogle } from "./account.js";
+import { STREAK_MIN, medalValues, shareLink, streakFromLog } from "./progress.js";
+
 const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const LEVEL_NAME = {
   A1: "Mới bắt đầu",
@@ -80,6 +83,7 @@ const NEW_STEPS = [5, 10, 15, 20, 25, 30, 35, 40];
 const MEDALS = [
   { id: "streak-3", kind: "streak", n: 3, name: "Ba ngày", mark: "🌱" },
   { id: "streak-7", kind: "streak", n: 7, name: "Một tuần", mark: "🍀" },
+  { id: "streak-10", kind: "streak", n: 10, name: "Mười ngày", mark: "🔥" },
   { id: "streak-14", kind: "streak", n: 14, name: "Hai tuần", mark: "🌙" },
   { id: "streak-30", kind: "streak", n: 30, name: "Một tháng", mark: "🌻" },
   { id: "streak-60", kind: "streak", n: 60, name: "Hai tháng", mark: "🍁" },
@@ -92,6 +96,12 @@ const MEDALS = [
   { id: "words-500", kind: "words", n: 500, name: "500 từ", mark: "📚" },
   { id: "words-1000", kind: "words", n: 1000, name: "1000 từ", mark: "🎓" },
   { id: "words-2500", kind: "words", n: 2500, name: "2500 từ", mark: "🏆" },
+  { id: "day-100", kind: "day", n: 100, name: "100 thẻ một ngày", mark: "⚡" },
+  { id: "own-1", kind: "own", n: 1, name: "Từ đầu tiên của tôi", mark: "➕" },
+  { id: "perfect-7", kind: "perfect", n: 7, name: "Bảy ngày hoàn hảo", mark: "✨" },
+  { id: "mastered-100", kind: "mastered", n: 100, name: "Thuộc 100 từ", mark: "🧠" },
+  { id: "share-2", kind: "share", n: 2, name: "Chia sẻ 2 lần", mark: "📣" },
+  { id: "invite-2", kind: "invite", n: 2, name: "Mời 2 bạn", mark: "🤝" },
 ];
 
 const main = document.getElementById("main");
@@ -112,6 +122,7 @@ const toastQueue = [];
 let toastOn = false;
 let lastAuto = { stamp: "", at: 0 };
 const loadedLevels = new Set();
+const loadedTopicFiles = new Set();
 const listenRun = { token: 0, timer: 0, playing: false };
 let EMOJI_INDEX = {};
 let picPrefs = {};
@@ -136,6 +147,13 @@ function addDays(iso, amount) {
   return date.toISOString().slice(0, 10);
 }
 
+function makeLocalId() {
+  const bytes = new Uint8Array(9);
+  if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  return `g_${[...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
 function hash(text) {
   let value = 2166136261;
   for (let i = 0; i < text.length; i += 1) {
@@ -156,7 +174,11 @@ function defaultState() {
     own: [],
     xp: 0,
     medals: [],
-    freeze: { bank: 0, progress: 0, streak: 0, last: null },
+    freeze: { bank: 0, progress: 0, streak: 0, last: null, best: 0, rule: STREAK_MIN },
+    shared: 0,
+    invites: 0,
+    localId: "",
+    updatedAt: 0,
   };
 }
 
@@ -197,6 +219,8 @@ function normalizeFreeze(raw, log) {
     progress: clampInt(raw.progress, 0, 6),
     streak: Math.max(0, Number(raw.streak) || 0),
     last,
+    best: Math.max(0, Number(raw.best) || 0),
+    rule: Number(raw.rule) || 0,
   };
 }
 
@@ -210,7 +234,7 @@ function loadState() {
   const base = defaultState();
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return base;
+    if (!raw) return applyStreakFromLog(base);
     const parsed = JSON.parse(raw);
     const settings = { ...base.settings, ...(parsed.settings || {}) };
     settings.levels = (settings.levels || []).filter((level) => LEVELS.includes(level));
@@ -226,7 +250,7 @@ function loadState() {
     settings.topics = migrateTopics(settings.topics);
     const log = parsed.log && typeof parsed.log === "object" ? parsed.log : {};
     const knownMedals = new Set(MEDALS.map((medal) => medal.id));
-    return {
+    return applyStreakFromLog({
       settings,
       cards: parsed.cards && typeof parsed.cards === "object" ? parsed.cards : {},
       introduced: parsed.introduced && typeof parsed.introduced === "object" ? parsed.introduced : {},
@@ -235,19 +259,40 @@ function loadState() {
       xp: Number.isFinite(Number(parsed.xp)) ? Math.max(0, Number(parsed.xp)) : backfillXp(log),
       medals: Array.isArray(parsed.medals) ? parsed.medals.filter((id) => knownMedals.has(id)) : [],
       freeze: normalizeFreeze(parsed.freeze, log),
-    };
+      shared: Math.max(0, Number(parsed.shared) || 0),
+      invites: Math.max(0, Number(parsed.invites) || 0),
+      localId: typeof parsed.localId === "string" && parsed.localId ? parsed.localId : makeLocalId(),
+      updatedAt: Math.max(0, Number(parsed.updatedAt) || 0),
+    });
   } catch {
-    return base;
+    return applyStreakFromLog(base);
   }
 }
 
-function save() {
+function applyStreakFromLog(state) {
+  if (!state.localId) state.localId = makeLocalId();
+  const computed = streakFromLog(state.log || {}, todayISO());
+  const migrated = !state.freeze || state.freeze.rule !== STREAK_MIN;
+  state.freeze.streak = computed.streak;
+  state.freeze.last = computed.last;
+  state.freeze.best = Math.max(Number(state.freeze.best) || 0, computed.best);
+  if (migrated) {
+    state.freeze.progress = computed.streak % 7;
+    state.freeze.rule = STREAK_MIN;
+  }
+  return state;
+}
+
+function save(options) {
   const cutoff = addDays(todayISO(), -120);
   for (const day of Object.keys(STATE.log)) {
     if (day < cutoff) delete STATE.log[day];
   }
+  STATE.updatedAt = Date.now();
+  if (!STATE.localId) STATE.localId = makeLocalId();
   localStorage.setItem(KEY, JSON.stringify(STATE));
   try { localStorage.setItem(THEME_KEY, STATE.settings.theme || "paper"); } catch { /* ignore */ }
+  if (!options || options.sync !== false) scheduleSync();
 }
 
 function newOwnId() {
@@ -343,10 +388,13 @@ function reconcileFreezes() {
 function noteStudyDay() {
   reconcileFreezes();
   const today = todayISO();
+  const row = STATE.log[today] || {};
+  if ((row.reviews || 0) < STREAK_MIN) return false;
   const freeze = STATE.freeze;
   if (freeze.last === today) return false;
   freeze.streak = (freeze.last ? freeze.streak : 0) + 1;
   freeze.last = today;
+  freeze.best = Math.max(freeze.best || 0, freeze.streak);
   freeze.progress += 1;
   if (freeze.progress < 7) return false;
   freeze.progress = 0;
@@ -363,14 +411,24 @@ function learnedCount() {
   return count;
 }
 
+function progressSnapshot() {
+  return {
+    streak: streakCount(),
+    cards: STATE.cards,
+    log: STATE.log,
+    ownCount: (STATE.own || []).length,
+    shared: STATE.shared || 0,
+    invites: STATE.invites || 0,
+  };
+}
+
 function checkMedals() {
   const have = new Set(STATE.medals || []);
-  const streak = streakCount();
-  const learned = learnedCount();
+  const values = medalValues(progressSnapshot());
   const fresh = [];
   for (const medal of MEDALS) {
     if (have.has(medal.id)) continue;
-    if ((medal.kind === "streak" ? streak : learned) >= medal.n) fresh.push(medal);
+    if ((values[medal.kind] || 0) >= medal.n) fresh.push(medal);
   }
   if (fresh.length) STATE.medals = [...have, ...fresh.map((medal) => medal.id)];
   return fresh;
@@ -735,9 +793,13 @@ function streakCount() {
   reconcileFreezes();
   const today = todayISO();
   const last = STATE.freeze.last;
-  if (!last) return 0;
-  if (last === today || last === addDays(today, -1)) return STATE.freeze.streak;
-  return 0;
+  const value = last === today || last === addDays(today, -1) ? STATE.freeze.streak : 0;
+  STATE.freeze.best = Math.max(STATE.freeze.best || 0, value, bestStreakNow());
+  return value;
+}
+
+function bestStreakNow() {
+  return streakFromLog(STATE.log || {}, todayISO()).best;
 }
 
 function newRemaining() {
@@ -1511,15 +1573,25 @@ function renderDecks() {
     </button>`;
   }).join("");
   const allOn = settings.topics.length === 0;
-  const chips = [`<button type="button" class="chip${allOn ? " on" : ""}" data-act="topic-all" aria-pressed="${allOn}">Tất cả chủ đề</button>`];
+  const general = [];
+  const fields = [];
   for (const topic of DATA.topics || []) {
-    const count = countTopic(topic.id);
-    if (!count) continue;
-    const on = settings.topics.includes(topic.id);
-    chips.push(`<button type="button" class="chip${on ? " on" : ""}" data-act="topic" data-id="${esc(topic.id)}" aria-pressed="${on}">
-      ${esc(topic.name)} <small>${count}</small>
-    </button>`);
+    if (topic.group === "field") fields.push(topic);
+    else general.push(topic);
   }
+  fields.sort((a, b) => (a.order || 0) - (b.order || 0));
+  const chip = (topic) => {
+    const count = countTopic(topic.id);
+    if (topic.group !== "field" && !count) return "";
+    if (topic.group === "field" && !(topic.count > 0)) return "";
+    const on = settings.topics.includes(topic.id);
+    return `<button type="button" class="chip${on ? " on" : ""}" data-act="topic" data-id="${esc(topic.id)}" aria-pressed="${on}">
+      ${esc(topic.name)} <small>${count}</small>
+    </button>`;
+  };
+  const chips = [`<button type="button" class="chip${allOn ? " on" : ""}" data-act="topic-all" aria-pressed="${allOn}">Tất cả chủ đề</button>`]
+    .concat(general.map(chip).filter(Boolean));
+  const fieldChips = fields.map(chip).filter(Boolean);
   const chosen = settings.levels.length ? settings.levels.join(", ") : "chưa chọn";
   main.innerHTML = `<section class="lede">
     <h1>Bộ thẻ</h1>
@@ -1559,9 +1631,12 @@ function renderDecks() {
     </label>
     <h2 class="section-title">Từ của tôi</h2>
     ${ownDeckHtml()}
-    <h2 class="section-title">Chủ đề · ${(DATA.topics || []).length}</h2>
+    <h2 class="section-title">Chủ đề · ${general.length}</h2>
     <p class="note">Để “Tất cả chủ đề” nếu bạn muốn học mọi từ trong trình độ đã chọn. Số trên mỗi chủ đề là số từ trong trình độ đang bật.</p>
     <div class="chips">${chips.join("")}</div>
+    <h2 class="section-title">Ngành nghề · ${fields.length}</h2>
+    <p class="note">Từ chuyên ngành, từ dễ đến khó. Số là từ trong trình độ đang bật. Một từ có thể ở nhiều chủ đề.</p>
+    <div class="chips">${fieldChips.join("")}</div>
   </section>`;
   topmeta.textContent = chosen;
 }
@@ -1607,11 +1682,14 @@ function renderStats() {
   const today = todayISO();
   const yesterday = addDays(today, -1);
   const frozenYesterday = STATE.log[yesterday] && STATE.log[yesterday].frozen && !(STATE.log[yesterday].reviews > 0);
+  const todayCount = (STATE.log[today] && STATE.log[today].reviews) || 0;
   const streakNote = frozenYesterday
     ? "Hôm qua dùng đóng băng, chuỗi vẫn giữ."
-    : streak
-      ? (studied(today) ? "Bạn đã học hôm nay." : "Học một lượt hôm nay để giữ chuỗi.")
-      : "Học một lượt để bắt đầu chuỗi.";
+    : todayCount >= STREAK_MIN
+      ? "Hôm nay đã đủ 20 thẻ cho chuỗi."
+      : streak
+        ? `Hôm nay ${todayCount}/20 thẻ. Đủ 20 thẻ thì chuỗi tính thêm một ngày.`
+        : "Trả lời đủ 20 thẻ trong ngày để bắt đầu chuỗi.";
   const freeze = STATE.freeze;
   const freezeNote = freeze.bank >= 2
     ? `Đóng băng: ${freeze.bank}/2 · đã trữ đủ.`
@@ -1647,7 +1725,7 @@ function renderCredits() {
   const imageBits = LEVELS.map((level) => `${level} ${Number(images[level] || 0).toLocaleString("vi-VN")}`).join(" · ");
   main.innerHTML = `<section class="lede">
     <h1>Nguồn dữ liệu</h1>
-    <p>Bộ thẻ này có ${Number(DATA.total || 0).toLocaleString("vi-VN")} từ (${esc(bits)}). ${Number(DATA.withImage || 0).toLocaleString("vi-VN")} từ có ảnh (${esc(imageBits)}). Nghĩa tiếng Việt lấy từ Wiktionary, mức A1–C2 của từ đã có trong CEFR-J hoặc Octanove được giữ nguyên, từ mới được xếp mức theo tần suất wordfreq so với trung vị của từng mức CEFR. Chủ đề dựa trên Open English WordNet. Câu ví dụ lấy từ Tatoeba khi có câu chứa từ. Ảnh là OpenMoji hoặc ảnh tự do trên Wikimedia Commons. Dữ liệu đã được chọn lọc và rút gọn — không phải bản đầy đủ của các nguồn.</p>
+    <p>Bộ thẻ này có ${Number(DATA.total || 0).toLocaleString("vi-VN")} từ (${esc(bits)}). ${Number(DATA.withImage || 0).toLocaleString("vi-VN")} từ có ảnh (${esc(imageBits)}). Nghĩa tiếng Việt lấy từ Wiktionary, mức A1–C2 của từ đã có trong CEFR-J hoặc Octanove được giữ nguyên, từ mới được xếp mức theo tần suất wordfreq so với trung vị của từng mức CEFR. Chủ đề chung dựa trên Open English WordNet. Mục Ngành nghề thêm từ chuyên môn từ NGSL/NAWL/BSL/TSL, trang thuật ngữ Wikipedia, MeSH và WordNet. Câu ví dụ lấy từ Tatoeba khi có câu chứa từ. Ảnh là sticker hoặc ảnh tự do trên Wikimedia Commons. Dữ liệu đã được chọn lọc và rút gọn — không phải bản đầy đủ của các nguồn.</p>
     <article class="source">
       <div class="badge">CC BY-SA 4.0 và GFDL</div>
       <h2>Wiktionary tiếng Việt</h2>
@@ -1685,6 +1763,26 @@ function renderCredits() {
       <p><a href="https://github.com/rspeer/wordfreq" target="_blank" rel="noopener">github.com/rspeer/wordfreq</a> ·
       <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a> ·
       <a href="https://books.google.com/ngrams" target="_blank" rel="noopener">Google Books Ngram</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">CC BY-SA 4.0</div>
+      <h2>NGSL, NAWL, BSL, TSL</h2>
+      <p>New General Service List, New Academic Word List, Business Service List và TOEIC Service List của Charles Browne, Brent Culligan và Joseph Phillips. Dùng để gắn từ học thuật và thương mại vào ngành nghề. Giấy phép Creative Commons Ghi công – Chia sẻ tương tự 4.0.</p>
+      <p><a href="https://www.newgeneralservicelist.com/" target="_blank" rel="noopener">newgeneralservicelist.com</a> ·
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">CC BY-SA 4.0</div>
+      <h2>Trang thuật ngữ Wikipedia và Wiktionary</h2>
+      <p>Thuật ngữ nhiều chữ (ví dụ balance sheet, blood pressure) lấy từ các trang Glossary của Wikipedia tiếng Anh và phụ lục thuật ngữ của Wiktionary tiếng Anh. Định nghĩa được rút ngắn. Văn bản theo CC BY-SA.</p>
+      <p><a href="https://en.wikipedia.org/wiki/Wikipedia:Glossaries" target="_blank" rel="noopener">Wikipedia glossaries</a> ·
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">Phạm vi công cộng</div>
+      <h2>MeSH</h2>
+      <p>Medical Subject Headings của Thư viện Y khoa Quốc gia Hoa Kỳ, bản mô tả 2025. Thuật ngữ y, giải phẫu, dược và nha khoa. Tác phẩm của chính phủ Hoa Kỳ, phạm vi công cộng.</p>
+      <p><a href="https://www.nlm.nih.gov/mesh/" target="_blank" rel="noopener">nlm.nih.gov/mesh</a></p>
     </article>
     <article class="source">
       <div class="badge">CC BY 4.0</div>
@@ -1738,6 +1836,132 @@ function renderCredits() {
     <p class="note">Nghĩa, IPA, mức C1/C2 và dữ liệu wordfreq là tác phẩm phái sinh, giữ điều kiện chia sẻ tương tự của CC BY-SA 4.0 khi nguồn yêu cầu. Câu Tatoeba giữ CC BY 2.0 FR. Mức A1–B2 cần giữ lời trích CEFR-J. Emoji dự phòng là ký tự Unicode do app chọn, không lấy từ bộ tranh của ứng dụng khác. Mã nguồn ứng dụng tách riêng, xem LICENSE.</p>
   </section>`;
   topmeta.textContent = "Giấy phép và trích dẫn";
+}
+
+function monthCells() {
+  const today = todayISO();
+  const [year, month] = today.split("-").map(Number);
+  const first = new Date(Date.UTC(year, month - 1, 1));
+  const pad = first.getUTCDay();
+  const count = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const cells = [];
+  for (let i = 0; i < pad; i += 1) cells.push(`<i class="empty"></i>`);
+  for (let day = 1; day <= count; day += 1) {
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const row = STATE.log[iso] || {};
+    let kind = "";
+    if ((row.reviews || 0) >= STREAK_MIN) kind = "studied";
+    else if (row.frozen) kind = "frozen";
+    else if (iso < today) kind = "missed";
+    const todayMark = iso === today ? " today" : "";
+    cells.push(`<i class="${kind}${todayMark}" title="${iso}">${day}</i>`);
+  }
+  return cells.join("");
+}
+
+function medalCards() {
+  const values = medalValues(progressSnapshot());
+  const have = new Set(STATE.medals || []);
+  return MEDALS.map((medal) => {
+    const current = values[medal.kind] || 0;
+    const earned = have.has(medal.id) || current >= medal.n;
+    const shown = Math.min(current, medal.n);
+    const width = medal.n ? Math.min(100, Math.round((shown / medal.n) * 100)) : 0;
+    return `<article class="medal${earned ? "" : " locked"}">
+      <div class="medal-face" aria-hidden="true"><span>${medal.mark}</span></div>
+      <b>${esc(medal.name)}</b>
+      <small>${shown}/${medal.n}</small>
+      <div class="medal-bar" aria-hidden="true"><span style="width:${width}%"></span></div>
+    </article>`;
+  }).join("");
+}
+
+async function shareApp() {
+  const person = currentUser();
+  const ref = (person && person.uid) || STATE.localId || "guest";
+  const url = shareLink(ref);
+  const payload = { title: "FlashFree", text: "Học từ vựng tiếng Anh với FlashFree.", url };
+  let shared = false;
+  if (navigator.share) {
+    try {
+      await navigator.share(payload);
+      shared = true;
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+    }
+  }
+  if (!shared) {
+    try {
+      await navigator.clipboard.writeText(url);
+      shared = true;
+      toast("Đã chép liên kết");
+    } catch {
+      window.prompt("Chép liên kết này:", url);
+      return;
+    }
+  }
+  STATE.shared = (STATE.shared || 0) + 1;
+  const medals = checkMedals();
+  save();
+  if (view === "profile") render();
+  if (medals.length) celebrate(medals);
+}
+
+function paintAvatar() {
+  const button = document.querySelector("[data-act='profile']");
+  if (!button) return;
+  const person = currentUser();
+  if (person && person.photo) {
+    button.innerHTML = `<img alt="" src="${esc(person.photo)}" referrerpolicy="no-referrer">`;
+    return;
+  }
+  const name = person && person.name ? person.name : "Khách";
+  const initial = name.trim().slice(0, 1).toUpperCase() || "K";
+  button.innerHTML = `<span>${esc(initial)}</span>`;
+}
+
+function renderProfile() {
+  const person = currentUser();
+  const name = person ? (person.name || "Không tên") : "Khách";
+  const email = person && person.email ? person.email : "Chưa đăng nhập";
+  const photo = person && person.photo
+    ? `<img class="profile-photo" alt="" src="${esc(person.photo)}" referrerpolicy="no-referrer">`
+    : `<div class="profile-photo letter" aria-hidden="true">${esc(name.trim().slice(0, 1).toUpperCase() || "K")}</div>`;
+  const enabled = accountEnabled();
+  const authButton = person
+    ? `<button type="button" class="ghost" data-act="logout">Đăng xuất</button>`
+    : `<button type="button" class="primary" data-act="sign-in" ${enabled ? "" : "disabled"}>${enabled ? "Đăng nhập bằng Google" : "Chưa bật đăng nhập"}</button>`;
+  const streak = streakCount();
+  const best = STATE.freeze.best || 0;
+  const today = todayISO();
+  const todayCount = (STATE.log[today] && STATE.log[today].reviews) || 0;
+  main.innerHTML = `<section class="lede profile">
+    <div class="who">
+      ${photo}
+      <div>
+        <h1>${esc(name)}</h1>
+        <p class="note">${esc(email)}</p>
+      </div>
+    </div>
+    ${authButton}
+    <h2 class="section-title">Chuỗi ngày</h2>
+    <div class="stats">
+      <article class="stat"><div class="k">Hiện tại</div><div class="v">${streak}</div></article>
+      <article class="stat"><div class="k">Dài nhất</div><div class="v">${best}</div></article>
+    </div>
+    <p class="note">Một ngày vào chuỗi khi bạn vuốt hoặc trả lời ít nhất ${STREAK_MIN} thẻ. Hôm nay: ${todayCount}/${STREAK_MIN}. Ngày đóng băng vẫn giữ chuỗi.</p>
+    <div class="calhead">${WEEK.map((label) => `<span>${label}</span>`).join("")}</div>
+    <div class="cal" aria-label="Lịch tháng này">${monthCells()}</div>
+    <p class="legend"><i class="studied"></i> Đủ ${STREAK_MIN} thẻ <i class="frozen"></i> Đóng băng <i class="missed"></i> Chưa đủ</p>
+    <h2 class="section-title">Huy chương</h2>
+    <div class="medals">${medalCards()}</div>
+    <h2 class="section-title">Mời bạn</h2>
+    <p class="note">Đã chia sẻ ${STATE.shared || 0} lần. Bạn đã mời ${(STATE.invites || 0)} người đăng nhập.</p>
+    <button type="button" class="primary" data-act="share">Chia sẻ FlashFree</button>
+    <p class="note">Liên kết có mã của bạn. Trình duyệt nào không mở được bảng chia sẻ thì app chép liên kết.</p>
+  </section>`;
+  topmeta.textContent = "Hồ sơ";
+  paintAvatar();
 }
 
 function errorHtml() {
@@ -1946,8 +2170,10 @@ function render() {
   else if (view === "stats") renderStats();
   else if (view === "mine") renderMine();
   else if (view === "form") renderForm();
+  else if (view === "profile") renderProfile();
   else renderCredits();
   main.scrollTop = 0;
+  paintAvatar();
 }
 
 function grade(know) {
@@ -1982,7 +2208,7 @@ function grade(know) {
   }
   window.setTimeout(() => {
     busy = false;
-    renderStudy();
+    if (view === "study") renderStudy();
   }, tilt && !reduced ? 230 : 0);
 }
 
@@ -2068,13 +2294,72 @@ async function toggleLevel(id) {
   render();
 }
 
-function toggleTopic(id) {
+function filesForTopics(ids) {
+  const sources = DATA && DATA.topicSources ? DATA.topicSources : {};
+  const out = [];
+  for (const id of ids || []) {
+    for (const file of sources[id] || []) {
+      if (!out.includes(file)) out.push(file);
+    }
+  }
+  return out;
+}
+
+async function ensureTopicFiles(fileIds) {
+  const need = [...new Set(fileIds || [])].filter((id) => id && !loadedTopicFiles.has(id));
+  if (!need.length) return;
+  const parts = await Promise.all(need.map(async (id) => {
+    const res = await fetch(`data/fields/${id}.json`);
+    if (!res.ok) throw new Error(id);
+    return res.json();
+  }));
+  const have = new Set(DATA.cards.map((card) => card.id));
+  need.forEach((id, index) => {
+    for (const card of (parts[index] && parts[index].cards) || []) {
+      if (have.has(card.id)) continue;
+      DATA.cards.push(card);
+      have.add(card.id);
+    }
+    loadedTopicFiles.add(id);
+  });
+  reindex();
+}
+
+function prefetchTopicFiles() {
+  const ids = (DATA.topicFiles || []).filter((id) => !loadedTopicFiles.has(id));
+  if (!ids.length) return;
+  let index = 0;
+  const step = () => {
+    if (!DATA || index >= ids.length) return;
+    const batch = ids.slice(index, index + 3);
+    index += batch.length;
+    ensureTopicFiles(batch).then(() => {
+      const card = document.getElementById("card");
+      const flipped = card && card.classList.contains("is-flipped");
+      if (view === "study" && session && session.index === 0 && session.done === 0 && !flipped) {
+        session = null;
+        render();
+      }
+      window.setTimeout(step, 60);
+    }).catch(() => window.setTimeout(step, 200));
+  };
+  window.setTimeout(step, 800);
+}
+
+async function toggleTopic(id) {
   const selected = new Set(STATE.settings.topics);
   if (selected.has(id)) selected.delete(id);
   else selected.add(id);
   STATE.settings.topics = [...selected];
   save();
   session = null;
+  if (selected.has(id)) {
+    try {
+      await ensureTopicFiles(filesForTopics([id]));
+    } catch {
+      toast("Không tải được chủ đề này");
+    }
+  }
   render();
 }
 
@@ -2265,6 +2550,31 @@ document.addEventListener("click", (event) => {
     if (suppressClick) return;
     grade(name === "know");
   }
+  if (name === "profile") {
+    view = "profile";
+    render();
+    return;
+  }
+  if (name === "sign-in") {
+    signInGoogle().then((result) => {
+      if (result && result.ok) return;
+      if (result && result.reason === "disabled") toast("Chưa bật đăng nhập");
+      else if (result && result.reason !== "auth/popup-closed-by-user") toast("Không đăng nhập được");
+    });
+    return;
+  }
+  if (name === "logout") {
+    signOutGoogle().then(() => {
+      toast("Đã đăng xuất. Máy này vẫn học được như khách.");
+      view = "profile";
+      render();
+    });
+    return;
+  }
+  if (name === "share") {
+    shareApp();
+    return;
+  }
   if (name === "goto") {
     view = act.dataset.goto;
     render();
@@ -2395,11 +2705,74 @@ async function boot() {
     ICONS = iconRes && iconRes.ok ? await iconRes.json() : {};
     EMOJI_INDEX = emojiRes && emojiRes.ok ? await emojiRes.json() : {};
     STATE = loadState();
+    try {
+      const ref = new URLSearchParams(location.search).get("ref");
+      if (ref) sessionStorage.setItem("latu-ref", ref);
+    } catch { /* ignore */ }
     applyTheme(STATE.settings.theme);
+    bindAccount({
+      snapshot() {
+        return {
+          settings: STATE.settings,
+          cards: STATE.cards,
+          introduced: STATE.introduced,
+          log: STATE.log,
+          own: STATE.own,
+          xp: STATE.xp || 0,
+          medals: STATE.medals || [],
+          freeze: STATE.freeze,
+          shared: STATE.shared || 0,
+          invites: STATE.invites || 0,
+          localId: STATE.localId,
+          picPrefs,
+          updatedAt: STATE.updatedAt || 0,
+        };
+      },
+      today: todayISO,
+      apply(next) {
+        const settings = { ...STATE.settings, ...(next.settings || {}) };
+        settings.levels = (settings.levels || []).filter((level) => LEVELS.includes(level));
+        if (!THEMES[settings.theme]) settings.theme = "paper";
+        STATE.settings = settings;
+        STATE.cards = next.cards || {};
+        STATE.introduced = next.introduced || {};
+        STATE.log = next.log || {};
+        STATE.own = cleanOwn(next.own);
+        STATE.xp = next.xp || 0;
+        STATE.medals = Array.isArray(next.medals) ? next.medals : [];
+        STATE.freeze = next.freeze || STATE.freeze;
+        STATE.shared = next.shared || 0;
+        STATE.invites = next.invites || 0;
+        STATE.localId = next.localId || STATE.localId;
+        picPrefs = next.picPrefs || {};
+        savePicPrefs();
+        applyStreakFromLog(STATE);
+        applyTheme(settings.theme);
+        reindex();
+        session = null;
+        save({ sync: false });
+        render();
+      },
+      onUser() {
+        paintAvatar();
+        if (view === "profile") render();
+      },
+      setInvites(count) {
+        if ((STATE.invites || 0) >= count) return;
+        STATE.invites = count;
+        const medals = checkMedals();
+        save();
+        if (medals.length) celebrate(medals);
+        if (view === "profile") render();
+      },
+    });
     const known = new Set((DATA.topics || []).map((topic) => topic.id));
     STATE.settings.topics = migrateTopics(STATE.settings.topics).filter((id) => known.has(id));
     const initial = STATE.settings.levels.length ? STATE.settings.levels : ["B1", "B2"];
     await ensureLevels(initial);
+    try {
+      await ensureTopicFiles(filesForTopics(STATE.settings.topics));
+    } catch { /* a field file can load later */ }
     const changed = reconcileFreezes();
     const fresh = checkMedals();
     if (changed || fresh.length) save();
@@ -2410,6 +2783,7 @@ async function boot() {
     render();
     if (fresh.length) celebrate(fresh);
     prefetchLevels();
+    prefetchTopicFiles();
   } catch {
     main.innerHTML = errorHtml();
     topmeta.textContent = "";

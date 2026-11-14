@@ -10,7 +10,7 @@ Khi một thẻ hiện ra hoặc khi bạn chạm để lật, app cũng tự đ
 
 Nút **+** ở góc trên mở form thêm từ của bạn: tiếng Anh, nghĩa tiếng Việt, từ loại, câu ví dụ, emoji. Các từ nằm trong bộ **Từ của tôi**, chọn như bộ khác, và ôn bằng cùng lịch SM-2. Từ mới bạn thêm được đưa vào phiên hôm nay, không tính vào hạn thẻ mới của bộ sẵn. Sửa hoặc xóa được; xóa có hỏi lại. Nếu từ đã có trong bộ sẵn, form đề nghị điền nghĩa từ đó.
 
-Thống kê giữ chuỗi ngày. Cứ 7 ngày học liên tiếp bạn được 1 lần **đóng băng chuỗi**, trữ tối đa 2. Nghỉ đúng số ngày còn đóng băng thì chuỗi không bị xóa; nghỉ nhiều hơn thì chuỗi về 0 và lần đóng băng còn lại được giữ. Huy chương mở ở mốc chuỗi 3, 7, 14, 30, 60, 100, 200, 365 ngày và mốc từ đã học 50, 100, 250, 500, 1000, 2500. Mỗi lượt ôn cộng 1 XP, mỗi lần **Biết** cộng thêm 2 XP. Dải 14 ngày cho biết số lượt ôn và số từ bạn thêm trong ngày.
+Thống kê giữ chuỗi ngày. Một ngày chỉ tính vào chuỗi khi bạn trả lời ít nhất 20 thẻ (hằng số `STREAK_MIN` trong `js/progress.js`). Nhật ký từng thẻ vẫn được giữ. Cứ 7 ngày đủ 20 thẻ bạn được 1 lần **đóng băng chuỗi**, trữ tối đa 2. Nghỉ đúng số ngày còn đóng băng thì chuỗi không bị xóa; nghỉ nhiều hơn thì chuỗi về 0 và lần đóng băng còn lại được giữ. Huy chương mở ở mốc chuỗi 3, 7, 14, 30, 60, 100, 200, 365 ngày và mốc từ đã học 50, 100, 250, 500, 1000, 2500. Mỗi lượt ôn cộng 1 XP, mỗi lần **Biết** cộng thêm 2 XP. Dải 14 ngày cho biết số lượt ôn và số từ bạn thêm trong ngày.
 
 Lần đầu mở, app chọn sẵn trình độ **B1** và **B2**. Tiến độ cũ trong `localStorage` (khóa `latu-state-v1`) được giữ: id thẻ không đổi, nên lịch SM-2 vẫn khớp. Chủ đề cũ đã bỏ tên được đổi sang chủ đề mới tương ứng. Không có bước xóa dữ liệu.
 
@@ -30,7 +30,7 @@ Không có bước build. Thư mục gốc của repo là trang web. Repo xuất
 
 File `.github/workflows/pages.yml` đẩy trang lên GitHub Pages mỗi lần có commit trên nhánh `main` (`actions/upload-pages-artifact` rồi `actions/deploy-pages`). Trong Settings → Pages, chọn nguồn **GitHub Actions** một lần.
 
-CSS, JavaScript, font, `data/meta.json`, `data/level-a1.json` … `data/level-c2.json` và `data/icons.json` dùng đường dẫn tương đối, nên cùng một bản chạy ở gốc máy chủ local, dưới `/flashfree/`, và trên một tên miền riêng sau này. Trang không gắn `<base>` theo tên thư mục. Nếu địa chỉ là một thư mục mà thiếu dấu `/` cuối, trang tự thêm dấu đó trước khi tải file. App chỉ tải file trình độ đang chọn, rồi tải các mức còn lại ở nền. Ảnh không nằm trong repo: trình duyệt xin bản nhỏ (Commons rộng khoảng 320px, hoặc SVG OpenMoji) khi thẻ hiện ra. Emoji trong `icons.json` là ký tự Unicode do app chọn, dùng khi không có ảnh.
+CSS, JavaScript, font, `data/meta.json`, `data/level-a1.json` … `data/level-c2.json` và `data/icons.json` dùng đường dẫn tương đối, nên cùng một bản chạy ở gốc máy chủ local, dưới `/flashfree/`, và trên một tên miền riêng sau này. Trang không gắn `<base>` theo tên thư mục. Nếu địa chỉ là một thư mục mà thiếu dấu `/` cuối, trang tự thêm dấu đó trước khi tải file. App chỉ tải file trình độ đang chọn, rồi tải các mức còn lại ở nền. Từ chuyên ngành nằm trong `data/fields/` và chỉ tải khi mở chủ đề đó (hoặc tải nền sau). Ảnh không nằm trong repo: trình duyệt xin bản nhỏ (Commons rộng khoảng 320px, hoặc SVG OpenMoji) khi thẻ hiện ra. Emoji trong `icons.json` là ký tự Unicode do app chọn, dùng khi không có ảnh.
 
 Netlify hoặc Vercel cũng chạy được: publish directory là `.`, không cần build command. Không cần biến môi trường.
 
@@ -38,13 +38,14 @@ Netlify hoặc Vercel cũng chạy được: publish directory là `.`, không c
 
 ```bash
 pip install wordfreq wn
-python3 scripts/build_vocab.py
-python3 scripts/build_images.py
+python3 scripts/build_all.py
 ```
 
 `build_vocab.py` tải các nguồn trong `DATA_SOURCES.md` vào `data/raw/` (thư mục này không được commit), rồi ghi `data/meta.json` và một file cho mỗi mức. `build_images.py` gắn ảnh OpenMoji và Wikimedia Commons vào các file đó. Lần chạy sau dùng bản đã tải nếu file còn đó. Xóa `data/raw/` nếu bạn muốn tải lại từ đầu.
 
 Chi tiết giấy phép và cách trích dẫn nằm ở `DATA_SOURCES.md` và trang **Nguồn** trong app.
+
+Nút tròn góc trên mở hồ sơ: chuỗi, lịch tháng, huy chương, chia sẻ. Đăng nhập Google là tùy chọn và chỉ dùng gói Firebase miễn phí. Khi `js/firebase-config.js` còn để trống, app học như khách và nút ghi **Chưa bật đăng nhập**. Các bước bật nằm ở `docs/FIREBASE_SETUP_VI.md`.
 
 ## Cách thêm từ mới
 

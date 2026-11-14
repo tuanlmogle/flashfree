@@ -49,7 +49,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           branch="vocab-update-${GITHUB_RUN_ID}"
           git checkout -b "$branch"
-          git add data/level-*.json data/meta.json data/emoji-index.json data/extra-words.txt
+          git add data/level-*.json data/meta.json data/emoji-index.json data/extra-words.txt data/fields
           git commit -m "Update vocabulary data"
           git push origin "$branch"
           gh pr create --base main --head "$branch" \
