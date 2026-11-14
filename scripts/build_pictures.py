@@ -18,6 +18,8 @@ import json
 import urllib.request
 from pathlib import Path
 
+from photo_policy import apply_to_card, load_decisions
+
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
 DATA = ROOT / "data"
@@ -252,9 +254,12 @@ def main() -> None:
     import wn
     en = wn.Wordnet("oewn:2024")
     level_rank = ["A1", "A2", "B1", "B2", "C1", "C2"]
+    decisions = load_decisions()
+    photo_actions = {"drop": 0, "lead": 0, "keep": 0, "none": 0}
     before = {level: 0 for level in level_rank}
     after = {level: 0 for level in level_rank}
     totals = {level: 0 for level in level_rank}
+    sticker_first = 0
     cache: dict[tuple[str, str], tuple[list[str], list[str]]] = {}
 
     def lookup_related(word: str, pos: str):
@@ -296,11 +301,16 @@ def main() -> None:
                         break
             if (card.get("img") or {}).get("t") != "c":
                 card.pop("img", None)
+            action = apply_to_card(card, decisions)
+            photo_actions[action] = photo_actions.get(action, 0) + 1
             card["emo"] = hexes[:3]
             if not card["emo"]:
                 card.pop("emo", None)
             if card.get("img") or card.get("emo"):
                 after[level] += 1
+            lead = (card.get("img") or {}).get("lead") is True
+            if card.get("emo") and not lead:
+                sticker_first += 1
         path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         print(level, "before", before[level], "after", after[level], "of", totals[level])
 
@@ -309,8 +319,11 @@ def main() -> None:
     meta["imageCounts"] = after
     meta["withImage"] = sum(after.values())
     meta["imageBefore"] = before
+    meta["photoLead"] = photo_actions.get("lead", 0)
+    meta["stickerFirst"] = sticker_first
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print("pictures", meta["withImage"], "was", sum(before.values()))
+    print("photos", photo_actions, "sticker-first", sticker_first)
 
 
 if __name__ == "__main__":

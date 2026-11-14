@@ -215,7 +215,7 @@ main {
 .tabbar {
   flex: none;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: var(--tab-bg);
   border-top: 1px solid var(--line);
   padding: 6px 6px var(--safe-bottom);
@@ -230,11 +230,11 @@ main {
   align-items: center;
   gap: 2px;
   min-height: 52px;
-  font-size: 0.72rem;
+  font-size: 0.64rem;
   font-weight: 500;
   border-radius: 12px;
 }
-.tabbar button svg { width: 22px; height: 22px; }
+.tabbar button svg { width: 20px; height: 20px; }
 .tabbar button[aria-current="page"] {
   color: var(--teal);
   font-weight: 700;
@@ -341,6 +341,39 @@ main {
   font-weight: 700;
 }
 .styles button.on { background: var(--teal); color: var(--chip-on-fg); border-color: var(--teal); }
+.mine-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mine-head h1 { font-family: var(--serif); font-weight: 640; font-size: 1.7rem; margin: 4px 0; letter-spacing: -0.03em; }
+.mine-counts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mine-counts article { background: var(--paper); border-radius: 14px; padding: 8px; text-align: center; border: 1px solid var(--line); }
+.mine-counts b { display: block; font-family: var(--serif); font-size: 1.35rem; }
+.mine-counts span { color: var(--muted); font-size: 0.75rem; }
+.mine input[type="search"] { width: 100%; margin-top: 10px; border: 1px solid var(--line); background: var(--paper); border-radius: 12px; padding: 10px 12px; }
+.mine-tools { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; color: var(--muted); font-size: 0.82rem; }
+.mine-tools button, .rowmenu button, .tiny {
+  border: 0; background: var(--bg-deep); border-radius: 8px; min-height: 28px; padding: 0 8px; font-weight: 700; font-size: 0.78rem;
+}
+.tiny { min-height: 24px; padding: 0 6px; color: var(--teal); }
+#mine-window { position: relative; }
+.mine-row {
+  position: absolute; left: 0; right: 0; height: 100px;
+  display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: center;
+  background: var(--paper); border-radius: 14px; padding: 6px 8px; overflow: hidden;
+}
+.mine-thumb, .mine-fallback { width: 48px; height: 48px; object-fit: contain; border-radius: 10px; background: var(--bg-deep); display: grid; place-items: center; font-size: 1.4rem; }
+.mine-word { margin: 0; font-family: var(--serif); font-weight: 640; font-size: 1.05rem; }
+.mine-mean, .mine-ex { margin: 0; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mine-ex { color: var(--muted); }
+.mine-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; position: relative; }
+.bars { display: flex; gap: 2px; align-items: flex-end; height: 16px; }
+.bars i { width: 5px; height: 8px; border-radius: 2px; background: var(--line); display: block; }
+.bars i:nth-child(2) { height: 10px; }
+.bars i:nth-child(3) { height: 12px; }
+.bars i:nth-child(4) { height: 14px; }
+.bars i:nth-child(5) { height: 16px; }
+.bars i.on { background: var(--teal); }
+.rowmenu { display: flex; flex-direction: column; gap: 4px; position: absolute; right: 0; top: 28px; z-index: 3; background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 6px; min-width: 140px; }
+.rowmenu.hidden { display: none; }
+.mine-empty { position: absolute; top: 8px; }
 .wordwrap {
   flex: 1;
   display: flex;

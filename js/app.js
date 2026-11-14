@@ -470,7 +470,7 @@ function pictureChoices(card) {
     all.push(pic);
   };
   if (card.img && card.img.t === "c" && card.img.f) {
-    push({ s: "c", f: card.img.f, a: card.img.a || "", l: card.img.l || "" });
+    push({ s: "c", f: card.img.f, a: card.img.a || "", l: card.img.l || "", lead: card.img.lead === true });
   }
   if (card.img && card.img.t === "o" && card.img.h) {
     push({ s: "o", h: card.img.h, a: card.img.a || "" });
@@ -494,6 +494,12 @@ function orderedPics(card) {
   if (style === "sticker") list = all.filter((pic) => pic.s === "f");
   else if (style === "flat") list = all.filter((pic) => pic.s === "w" || pic.s === "n" || pic.s === "o");
   else if (style === "photo") list = all.filter((pic) => pic.s === "c");
+  else {
+    const lead = all.filter((pic) => pic.s === "c" && pic.lead);
+    const emoji = all.filter((pic) => pic.s !== "c");
+    const weak = all.filter((pic) => pic.s === "c" && !pic.lead);
+    list = lead.concat(emoji, weak);
+  }
   if (!list.length) list = all;
   const saved = picPrefs[card.id];
   if (!saved) return list;
@@ -598,6 +604,7 @@ function planToday(today) {
   for (const card of pool()) {
     if (!inDeck(card)) continue;
     const state = STATE.cards[card.id];
+    if (state && isMastered(state)) continue;
     if (!state) unseen.push(card);
     else if (state.due <= today && state.last !== today) due.push(card);
   }
@@ -759,13 +766,13 @@ function totals() {
   for (const card of pool()) {
     if (!inDeck(card)) continue;
     const state = STATE.cards[card.id];
-    if (state && state.due <= today && state.last !== today) due += 1;
+    if (state && !isMastered(state) && state.due <= today && state.last !== today) due += 1;
   }
   const todayRow = STATE.log[today] || { reviews: 0, correct: 0 };
   return { learned, reviews, correct, due, todayRow, xp: STATE.xp || 0 };
 }
 
-function speak(text, quiet) {
+function speak(text, quiet, lang) {
   const synth = window.speechSynthesis;
   if (!synth || !text) {
     if (!quiet) toast("Trình duyệt này không đọc được tiếng Anh.");
@@ -773,11 +780,12 @@ function speak(text, quiet) {
   }
   try {
     const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = "en-US";
+    const language = lang || "en-US";
+    utter.lang = language;
     utter.rate = 0.92;
     const voices = synth.getVoices();
-    const voice = voices.find((item) => item.lang === "en-US")
-      || voices.find((item) => /^en([-_]|$)/i.test(item.lang || ""));
+    const voice = voices.find((item) => item.lang === language)
+      || voices.find((item) => new RegExp("^" + language.slice(0, 2) + "([-_]|$)", "i").test(item.lang || ""));
     if (voice) utter.voice = voice;
     synth.cancel();
     synth.speak(utter);
@@ -1747,6 +1755,187 @@ function setNav() {
   });
 }
 
+function isMastered(state) {
+  if (!state) return false;
+  return (state.interval || 0) >= 180 || (state.reps || 0) >= 6;
+}
+
+function memoryStrength(state) {
+  if (!state || (state.reps || 0) <= 0) return 0;
+  if (isMastered(state)) return 5;
+  const interval = state.interval || 0;
+  const reps = state.reps || 0;
+  if (interval >= 30 || reps >= 4) return 4;
+  if (interval >= 13 || reps >= 3) return 3;
+  if (interval >= 6 || reps >= 2) return 2;
+  return 1;
+}
+
+function memoryBucket(state) {
+  const strength = memoryStrength(state);
+  if (strength >= 5) return "known";
+  if (strength <= 1) return "learn";
+  return "practice";
+}
+
+const MINE_ROW = 108;
+let mineQuery = "";
+let mineFilter = "all";
+let mineMenu = "";
+
+function studiedEntries() {
+  const rows = [];
+  for (const [id, state] of Object.entries(STATE.cards || {})) {
+    const card = INDEX.get(id);
+    if (!card || !state) continue;
+    rows.push({ card, state, bucket: memoryBucket(state), strength: memoryStrength(state) });
+  }
+  rows.sort((a, b) => a.card.word.localeCompare(b.card.word, "en") || a.card.pos.localeCompare(b.card.pos));
+  return rows;
+}
+
+function mineVisible(rows) {
+  const query = mineQuery.trim().toLowerCase();
+  return rows.filter((row) => {
+    if (mineFilter !== "all" && row.bucket !== mineFilter) return false;
+    if (!query) return true;
+    const card = row.card;
+    return card.word.toLowerCase().includes(query)
+      || String(card.meaning || "").toLowerCase().includes(query)
+      || String(card.example || "").toLowerCase().includes(query);
+  });
+}
+
+function strengthHtml(strength) {
+  const bars = [0, 1, 2, 3, 4].map((step) => `<i class="${step < strength ? "on" : ""}"></i>`).join("");
+  return `<span class="bars" aria-label="Độ nhớ ${strength} trên 5">${bars}</span>`;
+}
+
+function mineThumb(card) {
+  const pic = chosenPic(card).pic;
+  const src = imageUrl(pic);
+  if (!src) {
+    const icon = memoryIcon(card);
+    return `<span class="mine-fallback">${icon ? esc(icon) : ""}</span>`;
+  }
+  return `<img class="mine-thumb" alt="" src="${esc(src)}" loading="lazy" decoding="async">`;
+}
+
+function paintMineRows() {
+  const windowBox = document.getElementById("mine-window");
+  const rowsBox = document.getElementById("mine-rows");
+  if (!windowBox || !rowsBox || view !== "mine") return;
+  const shown = mineVisible(studiedEntries());
+  const total = shown.length;
+  windowBox.style.height = `${Math.max(total, 1) * MINE_ROW}px`;
+  const listTop = windowBox.offsetTop;
+  const start = Math.max(0, Math.floor((main.scrollTop - listTop) / MINE_ROW) - 3);
+  const count = Math.ceil(main.clientHeight / MINE_ROW) + 8;
+  const slice = shown.slice(start, start + count);
+  const empty = total ? "" : `<p class="note mine-empty">Chưa có thẻ nào trong nhóm này.</p>`;
+  rowsBox.innerHTML = empty + slice.map((row, offset) => {
+    const card = row.card;
+    const en = card.meaningLang === "en";
+    const example = card.example
+      ? `<p class="mine-ex"><button type="button" class="tiny" data-act="mine-speak" data-text="${esc(card.example)}" aria-label="Nghe câu">▶</button> ${esc(card.example)}</p>`
+      : "";
+    const own = card.own ? `<button type="button" data-act="mine-edit" data-id="${esc(card.id)}">Sửa</button><button type="button" data-act="mine-delete" data-id="${esc(card.id)}">Xóa</button>` : "";
+    return `<article class="mine-row" style="top:${(start + offset) * MINE_ROW}px">
+      ${mineThumb(card)}
+      <div class="mine-copy">
+        <p class="mine-word"><button type="button" class="tiny" data-act="mine-speak" data-text="${esc(card.word)}" aria-label="Nghe từ">▶</button> ${esc(card.word)} ${en ? `<span class="pill en">EN</span>` : ""}</p>
+        ${en ? `<p class="en-label">Giải nghĩa tiếng Anh</p>` : ""}
+        <p class="mine-mean">${esc(card.meaning)}</p>
+        ${example}
+      </div>
+      <div class="mine-side">
+        ${strengthHtml(row.strength)}
+        <button type="button" class="tiny more" data-act="mine-menu" data-id="${esc(card.id)}" aria-label="Việc với thẻ">⋯</button>
+        <div class="rowmenu${mineMenu === card.id ? "" : " hidden"}">
+          <button type="button" data-act="mine-reset" data-id="${esc(card.id)}">Đặt lại tiến độ</button>
+          <button type="button" data-act="mine-retire" data-id="${esc(card.id)}">Đánh dấu đã thuộc</button>
+          ${own}
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+  const countNode = document.getElementById("mine-shown");
+  if (countNode) countNode.textContent = `${total.toLocaleString("vi-VN")} thẻ`;
+}
+
+function renderMine() {
+  const all = studiedEntries();
+  const counts = { learn: 0, practice: 0, known: 0 };
+  for (const row of all) counts[row.bucket] += 1;
+  const filters = [
+    ["all", "Tất cả"],
+    ["learn", "Cần học"],
+    ["practice", "Đang luyện"],
+    ["known", "Đã thuộc"],
+  ].map(([id, label]) => `<button type="button" class="chip${mineFilter === id ? " on" : ""}" data-act="mine-filter" data-id="${id}">${label}</button>`).join("");
+  main.innerHTML = `<section class="mine">
+    <div class="mine-head">
+      <h1>Thẻ của tôi</h1>
+      <button type="button" class="addbtn" data-act="add-word" aria-label="Thêm từ">+</button>
+    </div>
+    <p class="note">Đã thuộc khi Biết liên tiếp 6 lần, hoặc lịch ôn cách từ 180 ngày — thẻ đó không còn được xếp lịch. Chưa biết đưa thẻ về sớm, theo SM-2.</p>
+    <div class="mine-counts">
+      <article><b>${counts.learn.toLocaleString("vi-VN")}</b><span>Cần học</span></article>
+      <article><b>${counts.practice.toLocaleString("vi-VN")}</b><span>Đang luyện</span></article>
+      <article><b>${counts.known.toLocaleString("vi-VN")}</b><span>Đã thuộc</span></article>
+    </div>
+    <input id="mine-search" type="search" placeholder="Tìm từ hoặc nghĩa" value="${esc(mineQuery)}" autocomplete="off">
+    <div class="chips">${filters}</div>
+    <div class="mine-tools">
+      <span id="mine-shown"></span>
+      <button type="button" data-act="mine-export">Tải CSV</button>
+    </div>
+    <div id="mine-window"><div id="mine-rows"></div></div>
+  </section>`;
+  topmeta.textContent = `${all.length.toLocaleString("vi-VN")} đã học`;
+  paintMineRows();
+}
+
+function resetCardProgress(id) {
+  delete STATE.cards[id];
+  session = null;
+  save();
+  toast("Đã đặt lại tiến độ");
+  renderMine();
+}
+
+function retireCard(id) {
+  const prev = STATE.cards[id] || { ef: 2.5, reps: 0, interval: 0, lapses: 0, last: null };
+  const interval = Math.max(prev.interval || 0, 180);
+  STATE.cards[id] = {
+    ef: prev.ef || 2.5,
+    reps: Math.max(prev.reps || 0, 6),
+    interval,
+    lapses: prev.lapses || 0,
+    due: addDays(todayISO(), interval),
+    last: prev.last || todayISO(),
+  };
+  session = null;
+  save();
+  toast("Đã đánh dấu thuộc");
+  renderMine();
+}
+
+function exportMineCsv() {
+  const lines = ["word,pos,meaning,meaning_lang,example,level,strength,status"];
+  for (const row of mineVisible(studiedEntries())) {
+    const card = row.card;
+    const cells = [card.word, card.pos || "", card.meaning || "", card.meaningLang || "vi", card.example || "", card.level || "", row.strength, row.bucket];
+    lines.push(cells.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","));
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "flashfree-the-cua-toi.csv";
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function render() {
   if (!DATA) return;
   stopAudio();
@@ -1755,6 +1944,7 @@ function render() {
   if (view === "study") renderStudy();
   else if (view === "decks") renderDecks();
   else if (view === "stats") renderStats();
+  else if (view === "mine") renderMine();
   else if (view === "form") renderForm();
   else renderCredits();
   main.scrollTop = 0;
@@ -1977,6 +2167,43 @@ document.addEventListener("click", (event) => {
     render();
     return;
   }
+  if (name === "mine-filter") {
+    mineFilter = act.dataset.id || "all";
+    mineMenu = "";
+    renderMine();
+    return;
+  }
+  if (name === "mine-menu") {
+    mineMenu = mineMenu === act.dataset.id ? "" : act.dataset.id;
+    paintMineRows();
+    return;
+  }
+  if (name === "mine-speak") {
+    event.preventDefault();
+    event.stopPropagation();
+    speak(act.dataset.text || "", false, "en-US");
+    return;
+  }
+  if (name === "mine-reset") {
+    resetCardProgress(act.dataset.id);
+    return;
+  }
+  if (name === "mine-retire") {
+    retireCard(act.dataset.id);
+    return;
+  }
+  if (name === "mine-edit") {
+    openForm(act.dataset.id);
+    return;
+  }
+  if (name === "mine-delete") {
+    deleteOwn(act.dataset.id);
+    return;
+  }
+  if (name === "mine-export") {
+    exportMineCsv();
+    return;
+  }
   if (name === "pic-swap") {
     event.preventDefault();
     event.stopPropagation();
@@ -2084,7 +2311,16 @@ document.addEventListener("change", (event) => {
   save();
 });
 
+main.addEventListener("scroll", () => {
+  if (view === "mine") paintMineRows();
+}, { passive: true });
+
 document.addEventListener("input", (event) => {
+  if (event.target.id === "mine-search") {
+    mineQuery = event.target.value;
+    paintMineRows();
+    return;
+  }
   const form = event.target.form;
   if (!form || form.id !== "word-form" || event.target.name !== "word") return;
   updatePrefill(form);

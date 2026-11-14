@@ -791,15 +791,16 @@ def load_examples(cards: list[dict]) -> dict[str, dict]:
     return chosen
 
 
-# Zipf medians of single-word CEFR-J / Octanove entries in wordfreq (en),
-# measured while building this version. A word without an official level is
-# placed in the band whose median it still reaches.
+# Zipf cutoffs for words that are NOT in CEFR-J or Octanove.
+# A1–B2 match the median frequency of those official bands.
+# C1 starts at 2.70, below the median of official C2 words (~2.9), so a
+# reasonably common word is C1 and only a rarer tail stays C2.
 ZIPF_LEVEL = (
     (5.03, "A1"),
     (4.58, "A2"),
     (4.19, "B1"),
     (3.77, "B2"),
-    (3.34, "C1"),
+    (2.70, "C1"),
 )
 
 EXTRA_POS = ("noun", "verb", "adj", "adv")
@@ -825,6 +826,55 @@ def level_from_zipf(score: float) -> str:
         if score >= bound:
             return level
     return "C2"
+
+
+def official_levels() -> dict[tuple[str, str], str]:
+    """Easiest CEFR-J / Octanove level for each (lemma, pos)."""
+    found: dict[tuple[str, str], str] = {}
+    paths = [
+        (FILES["cefrj"], None),
+        (FILES["octanove"], {"C1", "C2"}),
+    ]
+    for path, allowed in paths:
+        if not path.exists():
+            continue
+        with path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                level = row.get("CEFR") or ""
+                if allowed and level not in allowed:
+                    continue
+                if level not in LEVEL_RANK:
+                    continue
+                pos = CEFR_POS.get((row.get("pos") or "").strip().lower())
+                if not pos:
+                    continue
+                for part in (row.get("headword") or "").split("/"):
+                    word = part.strip().lower()
+                    if not word:
+                        continue
+                    key = (word, pos)
+                    previous = found.get(key)
+                    if previous is None or LEVEL_RANK[level] < LEVEL_RANK[previous]:
+                        found[key] = level
+    return found
+
+
+def relevel_cards(cards: list[dict]) -> dict[str, int]:
+    """Keep official CEFR levels. Other cards follow ZIPF_LEVEL. Ids stay put."""
+    official = official_levels()
+    moved = {"official": 0, "frequency": 0, "changed": 0}
+    for card in cards:
+        key = (card["word"].lower(), card.get("pos") or "")
+        before = card.get("level")
+        if key in official:
+            card["level"] = official[key]
+            moved["official"] += 1
+        else:
+            card["level"] = level_from_zipf(zipf_frequency(card["word"].lower(), "en"))
+            moved["frequency"] += 1
+        if card["level"] != before:
+            moved["changed"] += 1
+    return moved
 
 
 def proper_nounish(original: str, score: float) -> bool:
@@ -1282,6 +1332,8 @@ def main() -> None:
         card["tatoeba"] = ref
     print("classifying topics...")
     topics = classify(cards)
+    moved = relevel_cards(cards)
+    print("relevel", moved)
     write_outputs(cards, topics)
     wanted = {"abandon", "apple", "water", "development", "beautiful", "because", "run", "significant"}
     print("--- spot check ---")
