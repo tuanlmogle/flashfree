@@ -356,15 +356,23 @@ main {
 #mine-window { position: relative; }
 .mine-row {
   position: absolute; left: 0; right: 0; height: 100px;
-  display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: center;
-  background: var(--paper); border-radius: 14px; padding: 6px 8px; overflow: hidden;
+  display: grid; grid-template-columns: 48px minmax(0, 1fr) 44px; gap: 8px; align-items: center;
+  background: var(--paper); border-radius: 14px; padding: 6px 8px;
 }
 .mine-thumb, .mine-fallback { width: 48px; height: 48px; object-fit: contain; border-radius: 10px; background: var(--bg-deep); display: grid; place-items: center; font-size: 1.4rem; }
-.mine-word { margin: 0; font-family: var(--serif); font-weight: 640; font-size: 1.05rem; }
-.mine-mean, .mine-ex { margin: 0; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mine-ex { color: var(--muted); }
-.mine-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; position: relative; }
-.bars { display: flex; gap: 2px; align-items: flex-end; height: 16px; }
+.mine-copy { min-width: 0; overflow: hidden; }
+.mine-word { margin: 0; font-family: var(--serif); font-weight: 640; font-size: 1.05rem; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.mine-mean, .mine-ex { margin: 0; font-size: 0.82rem; min-width: 0; }
+.mine-mean {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.mine-ex { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mine-side { width: 44px; flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; position: relative; }
+.bars { display: flex; flex: none; gap: 2px; align-items: flex-end; height: 16px; width: 33px; }
 .bars i { width: 5px; height: 8px; border-radius: 2px; background: var(--line); display: block; }
 .bars i:nth-child(2) { height: 10px; }
 .bars i:nth-child(3) { height: 12px; }
