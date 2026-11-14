@@ -28,18 +28,40 @@ const POS_VI = {
 const WEEK = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 const KEY = "latu-state-v1";
 const NEW_STEPS = [5, 10, 15, 20, 25, 30, 35, 40];
+const MEDALS = [
+  { id: "streak-3", kind: "streak", n: 3, name: "Ba ngày", mark: "🌱" },
+  { id: "streak-7", kind: "streak", n: 7, name: "Một tuần", mark: "🍀" },
+  { id: "streak-14", kind: "streak", n: 14, name: "Hai tuần", mark: "🌙" },
+  { id: "streak-30", kind: "streak", n: 30, name: "Một tháng", mark: "🌻" },
+  { id: "streak-60", kind: "streak", n: 60, name: "Hai tháng", mark: "🍁" },
+  { id: "streak-100", kind: "streak", n: 100, name: "Trăm ngày", mark: "⭐" },
+  { id: "streak-200", kind: "streak", n: 200, name: "Hai trăm", mark: "🏔️" },
+  { id: "streak-365", kind: "streak", n: 365, name: "Một năm", mark: "☀️" },
+  { id: "words-50", kind: "words", n: 50, name: "50 từ", mark: "✏️" },
+  { id: "words-100", kind: "words", n: 100, name: "100 từ", mark: "📘" },
+  { id: "words-250", kind: "words", n: 250, name: "250 từ", mark: "📗" },
+  { id: "words-500", kind: "words", n: 500, name: "500 từ", mark: "📚" },
+  { id: "words-1000", kind: "words", n: 1000, name: "1000 từ", mark: "🎓" },
+  { id: "words-2500", kind: "words", n: 2500, name: "2500 từ", mark: "🏆" },
+];
 
 const main = document.getElementById("main");
 const topmeta = document.getElementById("topmeta");
 let DATA = null;
+let ICONS = {};
 let INDEX = new Map();
 let STATE = null;
 let view = "study";
+let returnView = "decks";
+let editingId = "";
 let session = null;
 let busy = false;
 let drag = null;
 let suppressClick = false;
 let toastTimer = 0;
+const toastQueue = [];
+let toastOn = false;
+let lastAuto = { stamp: "", at: 0 };
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -71,11 +93,61 @@ function hash(text) {
 
 function defaultState() {
   return {
-    settings: { newPerDay: 10, levels: ["B1", "B2"], topics: [] },
+    settings: { newPerDay: 10, levels: ["B1", "B2"], topics: [], autoSpeak: true, ownDeck: true },
     cards: {},
     introduced: {},
     log: {},
+    own: [],
+    xp: 0,
+    medals: [],
+    freeze: { bank: 0, progress: 0, streak: 0, last: null },
   };
+}
+
+function clampInt(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.min(max, Math.max(min, Math.round(number)));
+}
+
+function legacyStreak(log) {
+  const reviewed = (day) => !!(log[day] && log[day].reviews > 0);
+  let day = todayISO();
+  if (!reviewed(day)) day = addDays(day, -1);
+  let count = 0;
+  let last = null;
+  while (reviewed(day) && count < 5000) {
+    if (!last) last = day;
+    count += 1;
+    day = addDays(day, -1);
+  }
+  return { count, last };
+}
+
+function normalizeFreeze(raw, log) {
+  const saved = raw && typeof raw === "object" && ("streak" in raw || "last" in raw || "bank" in raw);
+  if (!saved) {
+    const legacy = legacyStreak(log);
+    return {
+      bank: Math.min(2, Math.floor(legacy.count / 7)),
+      progress: legacy.count % 7,
+      streak: legacy.count,
+      last: legacy.last,
+    };
+  }
+  const last = typeof raw.last === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.last) ? raw.last : null;
+  return {
+    bank: clampInt(raw.bank, 0, 2),
+    progress: clampInt(raw.progress, 0, 6),
+    streak: Math.max(0, Number(raw.streak) || 0),
+    last,
+  };
+}
+
+function backfillXp(log) {
+  let xp = 0;
+  for (const row of Object.values(log)) xp += (row.reviews || 0) + 2 * (row.correct || 0);
+  return xp;
 }
 
 function loadState() {
@@ -88,11 +160,19 @@ function loadState() {
     settings.levels = (settings.levels || []).filter((level) => LEVELS.includes(level));
     settings.topics = Array.isArray(settings.topics) ? settings.topics : [];
     if (!NEW_STEPS.includes(Number(settings.newPerDay))) settings.newPerDay = 10;
+    settings.autoSpeak = settings.autoSpeak !== false;
+    settings.ownDeck = settings.ownDeck !== false;
+    const log = parsed.log && typeof parsed.log === "object" ? parsed.log : {};
+    const knownMedals = new Set(MEDALS.map((medal) => medal.id));
     return {
       settings,
-      cards: parsed.cards || {},
-      introduced: parsed.introduced || {},
-      log: parsed.log || {},
+      cards: parsed.cards && typeof parsed.cards === "object" ? parsed.cards : {},
+      introduced: parsed.introduced && typeof parsed.introduced === "object" ? parsed.introduced : {},
+      log,
+      own: cleanOwn(parsed.own),
+      xp: Number.isFinite(Number(parsed.xp)) ? Math.max(0, Number(parsed.xp)) : backfillXp(log),
+      medals: Array.isArray(parsed.medals) ? parsed.medals.filter((id) => knownMedals.has(id)) : [],
+      freeze: normalizeFreeze(parsed.freeze, log),
     };
   } catch {
     return base;
@@ -107,12 +187,139 @@ function save() {
   localStorage.setItem(KEY, JSON.stringify(STATE));
 }
 
+function newOwnId() {
+  return `own-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function cleanIcon(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (/[<>&"'A-Za-z0-9]/.test(text)) return null;
+  if ([...text].length > 8) return null;
+  return text;
+}
+
+function cleanOwn(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  const ids = new Set();
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const word = String(item.word || "").trim().slice(0, 80);
+    const meaning = String(item.meaning || "").trim().slice(0, 240);
+    if (!word || !meaning) continue;
+    let id = String(item.id || "");
+    if (!/^own-[a-z0-9-]+$/i.test(id) || ids.has(id)) id = newOwnId();
+    ids.add(id);
+    const icon = cleanIcon(item.icon);
+    out.push({
+      id,
+      word,
+      meaning,
+      pos: POS_VI[item.pos] ? item.pos : "",
+      example: String(item.example || "").trim().slice(0, 300),
+      icon: icon || "",
+    });
+  }
+  return out;
+}
+
+function ownAsCards() {
+  return (STATE.own || []).map((item) => ({
+    id: item.id,
+    word: item.word,
+    pos: item.pos || "",
+    level: "A1",
+    meaning: item.meaning,
+    example: item.example || "",
+    own: true,
+    icon: item.icon || "",
+    topics: [],
+  }));
+}
+
+function pool() {
+  if (!STATE || STATE.settings.ownDeck === false) return DATA.cards;
+  return DATA.cards.concat(ownAsCards());
+}
+
+function reindex() {
+  INDEX = new Map(DATA.cards.map((card) => [card.id, card]));
+  for (const card of ownAsCards()) INDEX.set(card.id, card);
+}
+
+function reconcileFreezes() {
+  const freeze = STATE.freeze;
+  if (!freeze) return false;
+  const today = todayISO();
+  if (!freeze.last || freeze.last >= today) return false;
+  const gap = [];
+  let day = addDays(freeze.last, 1);
+  while (day < today) {
+    gap.push(day);
+    day = addDays(day, 1);
+  }
+  if (!gap.length) return false;
+  if (gap.length <= freeze.bank) {
+    for (const missed of gap) {
+      const row = STATE.log[missed] || { reviews: 0, correct: 0, added: 0 };
+      row.frozen = true;
+      STATE.log[missed] = row;
+    }
+    freeze.bank -= gap.length;
+    freeze.streak += gap.length;
+    freeze.last = gap[gap.length - 1];
+    return true;
+  }
+  freeze.streak = 0;
+  freeze.progress = 0;
+  freeze.last = null;
+  return true;
+}
+
+function noteStudyDay() {
+  reconcileFreezes();
+  const today = todayISO();
+  const freeze = STATE.freeze;
+  if (freeze.last === today) return false;
+  freeze.streak = (freeze.last ? freeze.streak : 0) + 1;
+  freeze.last = today;
+  freeze.progress += 1;
+  if (freeze.progress < 7) return false;
+  freeze.progress = 0;
+  if (freeze.bank >= 2) return false;
+  freeze.bank += 1;
+  return true;
+}
+
+function learnedCount() {
+  let count = 0;
+  for (const state of Object.values(STATE.cards)) {
+    if (state && state.reps >= 1) count += 1;
+  }
+  return count;
+}
+
+function checkMedals() {
+  const have = new Set(STATE.medals || []);
+  const streak = streakCount();
+  const learned = learnedCount();
+  const fresh = [];
+  for (const medal of MEDALS) {
+    if (have.has(medal.id)) continue;
+    if ((medal.kind === "streak" ? streak : learned) >= medal.n) fresh.push(medal);
+  }
+  if (fresh.length) STATE.medals = [...have, ...fresh.map((medal) => medal.id)];
+  return fresh;
+}
+
 function topicName(id) {
   const found = (DATA.topics || []).find((topic) => topic.id === id);
   return found ? found.name : id;
 }
 
 function inDeck(card) {
+  if (card.own) return STATE.settings.ownDeck !== false;
   const settings = STATE.settings;
   if (!settings.levels.includes(card.level)) return false;
   if (!settings.topics.length) return true;
@@ -122,13 +329,14 @@ function inDeck(card) {
 function sessionKey() {
   const settings = STATE.settings;
   const topics = settings.topics.length ? settings.topics.slice().sort().join(",") : "*";
-  return `${todayISO()}|${settings.newPerDay}|${settings.levels.join(",")}|${topics}`;
+  const own = settings.ownDeck === false ? "off" : (STATE.own || []).map((item) => item.id).join(",");
+  return `${todayISO()}|${settings.newPerDay}|${settings.levels.join(",")}|${topics}|${own}`;
 }
 
 function planToday(today) {
   const due = [];
   const unseen = [];
-  for (const card of DATA.cards) {
+  for (const card of pool()) {
     if (!inDeck(card)) continue;
     const state = STATE.cards[card.id];
     if (!state) unseen.push(card);
@@ -140,7 +348,10 @@ function planToday(today) {
     if (left !== right) return left < right ? -1 : 1;
     return hash(a.id) - hash(b.id);
   });
-  unseen.sort((a, b) => LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level) || hash(a.id) - hash(b.id));
+  unseen.sort((a, b) => {
+    if (!!a.own !== !!b.own) return a.own ? -1 : 1;
+    return LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level) || hash(a.id) - hash(b.id);
+  });
 
   const kept = (STATE.introduced[today] || []).filter((id) => {
     const card = INDEX.get(id);
@@ -149,15 +360,22 @@ function planToday(today) {
     return !state || state.last === today;
   });
   const keptSet = new Set(kept);
-  let room = Math.max(0, STATE.settings.newPerDay - kept.length);
-  const added = [];
+  const keptOwn = kept.filter((id) => String(id).startsWith("own-"));
+  const keptBuilt = kept.filter((id) => !String(id).startsWith("own-"));
+  let room = Math.max(0, STATE.settings.newPerDay - keptBuilt.length);
+  const addedOwn = [];
+  const addedBuilt = [];
   for (const card of unseen) {
-    if (room <= 0) break;
     if (keptSet.has(card.id)) continue;
-    added.push(card.id);
+    if (card.own) {
+      addedOwn.push(card.id);
+      continue;
+    }
+    if (room <= 0) continue;
+    addedBuilt.push(card.id);
     room -= 1;
   }
-  STATE.introduced = { [today]: kept.concat(added) };
+  STATE.introduced = { [today]: keptOwn.concat(addedOwn, keptBuilt, addedBuilt) };
   const fresh = STATE.introduced[today]
     .filter((id) => !STATE.cards[id])
     .map((id) => INDEX.get(id))
@@ -218,9 +436,16 @@ function applySm2(id, quality) {
 
 function bumpLog(know) {
   const today = todayISO();
-  const row = STATE.log[today] || { reviews: 0, correct: 0 };
+  const row = STATE.log[today] || { reviews: 0, correct: 0, added: 0 };
   row.reviews += 1;
   if (know) row.correct += 1;
+  STATE.log[today] = row;
+}
+
+function bumpAdded() {
+  const today = todayISO();
+  const row = STATE.log[today] || { reviews: 0, correct: 0, added: 0 };
+  row.added = (row.added || 0) + 1;
   STATE.log[today] = row;
 }
 
@@ -229,14 +454,12 @@ function studied(day) {
 }
 
 function streakCount() {
-  let day = todayISO();
-  if (!studied(day)) day = addDays(day, -1);
-  let count = 0;
-  while (studied(day) && count < 5000) {
-    count += 1;
-    day = addDays(day, -1);
-  }
-  return count;
+  reconcileFreezes();
+  const today = todayISO();
+  const last = STATE.freeze.last;
+  if (!last) return 0;
+  if (last === today || last === addDays(today, -1)) return STATE.freeze.streak;
+  return 0;
 }
 
 function newRemaining() {
@@ -262,37 +485,82 @@ function totals() {
   }
   let due = 0;
   const today = todayISO();
-  for (const card of DATA.cards) {
+  for (const card of pool()) {
     if (!inDeck(card)) continue;
     const state = STATE.cards[card.id];
     if (state && state.due <= today && state.last !== today) due += 1;
   }
   const todayRow = STATE.log[today] || { reviews: 0, correct: 0 };
-  return { learned, reviews, correct, due, todayRow };
+  return { learned, reviews, correct, due, todayRow, xp: STATE.xp || 0 };
 }
 
-function speak(text) {
-  if (!window.speechSynthesis) {
-    toast("Trình duyệt này không đọc được tiếng Anh.");
-    return;
+function speak(text, quiet) {
+  const synth = window.speechSynthesis;
+  if (!synth || !text) {
+    if (!quiet) toast("Trình duyệt này không đọc được tiếng Anh.");
+    return false;
   }
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = "en-US";
-  utter.rate = 0.92;
-  const voices = window.speechSynthesis.getVoices();
-  const voice = voices.find((item) => item.lang === "en-US")
-    || voices.find((item) => /^en([-_]|$)/i.test(item.lang || ""));
-  if (voice) utter.voice = voice;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utter);
+  try {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = "en-US";
+    utter.rate = 0.92;
+    const voices = synth.getVoices();
+    const voice = voices.find((item) => item.lang === "en-US")
+      || voices.find((item) => /^en([-_]|$)/i.test(item.lang || ""));
+    if (voice) utter.voice = voice;
+    synth.cancel();
+    synth.speak(utter);
+    synth.resume();
+    return true;
+  } catch {
+    if (!quiet) toast("Trình duyệt này không đọc được tiếng Anh.");
+    return false;
+  }
+}
+
+function gestureActive() {
+  const activation = navigator.userActivation;
+  if (!activation || typeof activation.isActive !== "boolean") return true;
+  return activation.isActive;
+}
+
+function autoSpeak(card, mode) {
+  if (!card || STATE.settings.autoSpeak === false) return;
+  if (mode === "show" && !gestureActive()) return;
+  const stamp = `${card.id}:${session ? session.index : 0}`;
+  const now = Date.now();
+  if (mode !== "flip" && lastAuto.stamp === stamp && now - lastAuto.at < 1000) return;
+  if (speak(card.word, true)) lastAuto = { stamp, at: Date.now() };
 }
 
 function toast(message) {
+  toastQueue.push({ message, celebrate: false });
+  pumpToast();
+}
+
+function celebrate(medals) {
+  const message = medals.length === 1
+    ? `Huy chương mới: ${medals[0].name}`
+    : `Mở khoá ${medals.length} huy chương mới`;
+  toastQueue.push({ message, celebrate: true });
+  pumpToast();
+}
+
+function pumpToast() {
+  if (toastOn || !toastQueue.length) return;
+  toastOn = true;
+  const item = toastQueue.shift();
   const node = document.getElementById("toast");
   node.hidden = false;
-  node.textContent = message;
+  node.textContent = item.message;
+  node.classList.toggle("celebrate", item.celebrate);
   window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => { node.hidden = true; }, 2200);
+  toastTimer = window.setTimeout(() => {
+    node.hidden = true;
+    node.classList.remove("celebrate");
+    toastOn = false;
+    pumpToast();
+  }, 2200);
 }
 
 function speakerButton() {
@@ -307,13 +575,22 @@ function wordClass(word) {
   return "word";
 }
 
+function memoryIcon(card) {
+  if (!card) return "";
+  if (card.own) return card.icon || "";
+  return ICONS[String(card.word || "").toLowerCase()] || "";
+}
+
 function cardFaces(card, item) {
-  const pos = POS_VI[card.pos] || card.pos;
+  const pos = card.pos ? (POS_VI[card.pos] || card.pos) : "";
   const retry = item.retry ? `<span class="pill retry">Ôn lại</span>` : "";
   const ipa = card.ipa ? `<p class="ipa">/${esc(card.ipa)}/</p>` : "";
   const also = card.also && card.also.length ? `<p class="also">Cũng viết: ${esc(card.also.join(", "))}</p>` : "";
   const topic = (card.topics || [])[0];
   const topicPill = topic ? `<span class="pill">${esc(topicName(topic))}</span>` : "";
+  const meta = card.own ? (pos ? `Của tôi · ${pos}` : "Của tôi") : `${card.level} · ${pos}`;
+  const icon = memoryIcon(card);
+  const memo = icon ? `<p class="memo" aria-hidden="true">${esc(icon)}</p>` : "";
   let example = `<p class="hint">Chưa có câu ví dụ cho từ này.</p>`;
   if (card.example) {
     const ref = card.tatoeba || {};
@@ -330,8 +607,9 @@ function cardFaces(card, item) {
   return `<div class="face front">
       <div class="stamps" aria-hidden="true"><span class="stamp miss">Chưa biết</span><span class="stamp know">Biết</span></div>
       ${speakerButton()}
-      <div class="pillrow"><span class="pill">${esc(card.level)} · ${esc(pos)}</span>${topicPill}${retry}</div>
+      <div class="pillrow"><span class="pill">${esc(meta)}</span>${topicPill}${retry}</div>
       <div class="wordwrap">
+        ${memo}
         <h1 class="${wordClass(card.word)}">${esc(card.word)}</h1>
         ${ipa}
         ${also}
@@ -340,7 +618,7 @@ function cardFaces(card, item) {
     </div>
     <div class="face back">
       ${speakerButton()}
-      <div class="pillrow"><span class="pill">${esc(card.level)} · ${esc(pos)}</span>${retry}</div>
+      <div class="pillrow"><span class="pill">${esc(meta)}</span>${retry}</div>
       <div class="wordwrap">
         <p class="meaning">${esc(card.meaning)}</p>
         ${example}
@@ -365,6 +643,7 @@ function fillCard() {
   node.classList.remove("is-flipped");
   node.innerHTML = cardFaces(card, item);
   updateStudyChrome();
+  autoSpeak(card, "show");
 }
 
 function studyShell() {
@@ -379,12 +658,16 @@ function studyShell() {
   </section>`;
 }
 
+function canStudy() {
+  if (STATE.settings.levels.length) return true;
+  return STATE.settings.ownDeck !== false && (STATE.own || []).length > 0;
+}
+
 function doneHtml() {
-  const levels = STATE.settings.levels;
-  if (!levels.length) {
+  if (!canStudy()) {
     return `<section class="empty">
       <h1>Chưa chọn trình độ</h1>
-      <p>Mở Bộ thẻ và chọn ít nhất một mức từ A1 đến C2. Lần đầu, B1 và B2 được chọn sẵn.</p>
+      <p>Mở Bộ thẻ và chọn ít nhất một mức từ A1 đến C2, hoặc thêm từ của bạn. Lần đầu, B1 và B2 được chọn sẵn.</p>
       <button type="button" class="primary" data-act="goto" data-goto="decks">Chọn bộ thẻ</button>
     </section>`;
   }
@@ -421,6 +704,149 @@ function countTopic(id) {
   }, 0);
 }
 
+function ownDeckHtml() {
+  const on = STATE.settings.ownDeck !== false;
+  const words = STATE.own || [];
+  const rows = words.map((item) => `<div class="ownrow">
+      <span class="ownemo" aria-hidden="true">${item.icon ? esc(item.icon) : "·"}</span>
+      <span class="owntext"><b>${esc(item.word)}</b><small>${esc(item.meaning)}</small></span>
+      <button type="button" data-act="edit-word" data-id="${esc(item.id)}">Sửa</button>
+      <button type="button" data-act="delete-word" data-id="${esc(item.id)}">Xóa</button>
+    </div>`).join("");
+  return `<button type="button" class="level ownlevel${on ? " on" : ""}" data-act="own-deck" aria-pressed="${on}">
+      <b>Từ của tôi</b><span>${words.length.toLocaleString("vi-VN")} từ · cùng lịch ôn</span>
+    </button>
+    <p class="note">Bộ này không phụ thuộc trình độ. Tắt nếu bạn chỉ muốn ôn bộ có sẵn. Bấm + ở góc trên để thêm từ.</p>
+    ${rows || `<p class="note">Chưa có từ nào.</p>`}`;
+}
+
+function posOptions(selected) {
+  const blank = `<option value=""${!selected ? " selected" : ""}>— không chọn —</option>`;
+  const rest = Object.entries(POS_VI).map(([id, name]) =>
+    `<option value="${id}"${selected === id ? " selected" : ""}>${esc(name)}</option>`).join("");
+  return blank + rest;
+}
+
+function builtinMatches(word) {
+  const key = word.trim().toLowerCase();
+  if (!key) return [];
+  const out = [];
+  const seen = new Set();
+  for (const card of DATA.cards) {
+    if (card.word.toLowerCase() !== key) continue;
+    if (seen.has(card.meaning)) continue;
+    seen.add(card.meaning);
+    out.push(card);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+function prefillHtml(word) {
+  const matches = builtinMatches(word);
+  if (!matches.length) return `<div class="prefill" hidden></div>`;
+  const buttons = matches.map((card) =>
+    `<button type="button" data-act="prefill" data-meaning="${esc(card.meaning)}">Điền nghĩa: ${esc(card.meaning.slice(0, 72))}</button>`).join("");
+  return `<div class="prefill"><p>Từ này có trong bộ sẵn.</p>${buttons}</div>`;
+}
+
+function renderForm() {
+  const current = (STATE.own || []).find((item) => item.id === editingId) || {
+    word: "", meaning: "", pos: "", example: "", icon: "",
+  };
+  main.innerHTML = `<form class="composer" id="word-form" data-id="${esc(editingId)}">
+    <h1>${editingId ? "Sửa từ" : "Thêm từ"}</h1>
+    <p>Từ được lưu trong bộ <strong>Từ của tôi</strong> trên máy này và ôn cùng lịch SM-2.</p>
+    <label>Từ tiếng Anh<input name="word" required maxlength="80" autocomplete="off" autocapitalize="off" value="${esc(current.word)}"></label>
+    ${prefillHtml(current.word)}
+    <label>Nghĩa tiếng Việt<textarea name="meaning" required maxlength="240">${esc(current.meaning)}</textarea></label>
+    <label>Từ loại<select name="pos">${posOptions(current.pos)}</select></label>
+    <label>Câu ví dụ<input name="example" maxlength="300" value="${esc(current.example)}"></label>
+    <label>Biểu tượng<input name="icon" maxlength="16" value="${esc(current.icon)}" placeholder="Ví dụ một emoji"></label>
+    <button type="submit" class="primary">${editingId ? "Lưu sửa" : "Lưu vào bộ của tôi"}</button>
+    <button type="button" class="ghost" data-act="close-form">Huỷ</button>
+  </form>`;
+  topmeta.textContent = "Từ của tôi";
+}
+
+function updatePrefill(form) {
+  const box = form.querySelector(".prefill");
+  if (!box) return;
+  const matches = builtinMatches(form.elements.word.value);
+  if (!matches.length) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = `<p>Từ này có trong bộ sẵn.</p>` + matches.map((card) =>
+    `<button type="button" data-act="prefill" data-meaning="${esc(card.meaning)}">Điền nghĩa: ${esc(card.meaning.slice(0, 72))}</button>`).join("");
+}
+
+function openForm(id) {
+  editingId = id || "";
+  returnView = view === "form" ? returnView : view;
+  view = "form";
+  render();
+}
+
+function saveOwn(form) {
+  const word = form.elements.word.value.trim();
+  const meaning = form.elements.meaning.value.trim();
+  if (!word || !meaning) return;
+  const icon = cleanIcon(form.elements.icon.value);
+  if (form.elements.icon.value.trim() && icon == null) {
+    toast("Biểu tượng chỉ dùng emoji");
+    return;
+  }
+  const pos = POS_VI[form.elements.pos.value] ? form.elements.pos.value : "";
+  const example = form.elements.example.value.trim().slice(0, 300);
+  const id = form.dataset.id || "";
+  const dup = (STATE.own || []).find((item) => item.word.toLowerCase() === word.toLowerCase() && item.id !== id);
+  if (dup) {
+    toast("Từ này đã có trong Từ của tôi");
+    return;
+  }
+  if (id) {
+    const item = STATE.own.find((entry) => entry.id === id);
+    if (!item) return;
+    Object.assign(item, { word: word.slice(0, 80), meaning: meaning.slice(0, 240), pos, example, icon: icon || "" });
+  } else {
+    STATE.own.push({
+      id: newOwnId(),
+      word: word.slice(0, 80),
+      meaning: meaning.slice(0, 240),
+      pos,
+      example,
+      icon: icon || "",
+    });
+    bumpAdded();
+    STATE.settings.ownDeck = true;
+  }
+  reindex();
+  session = null;
+  save();
+  toast(id ? "Đã sửa từ" : "Đã thêm vào Từ của tôi");
+  view = "decks";
+  render();
+}
+
+function deleteOwn(id) {
+  const item = (STATE.own || []).find((entry) => entry.id === id);
+  if (!item) return;
+  if (!window.confirm(`Xóa «${item.word}» khỏi bộ Từ của tôi?`)) return;
+  STATE.own = STATE.own.filter((entry) => entry.id !== id);
+  delete STATE.cards[id];
+  for (const day of Object.keys(STATE.introduced)) {
+    STATE.introduced[day] = (STATE.introduced[day] || []).filter((cardId) => cardId !== id);
+  }
+  reindex();
+  session = null;
+  save();
+  toast("Đã xóa từ");
+  render();
+}
+
 function renderDecks() {
   const settings = STATE.settings;
   const levels = LEVELS.map((level) => {
@@ -453,6 +879,13 @@ function renderDecks() {
       <strong>${settings.newPerDay} thẻ mới</strong>
       <button type="button" data-act="new-inc" aria-label="Tăng số thẻ mới">+</button>
     </div>
+    <h2 class="section-title">Đọc thẻ</h2>
+    <label class="switch">
+      <input type="checkbox" data-act="auto-speak" ${settings.autoSpeak !== false ? "checked" : ""}>
+      <span>Tự đọc khi lật thẻ</span>
+    </label>
+    <h2 class="section-title">Từ của tôi</h2>
+    ${ownDeckHtml()}
     <h2 class="section-title">Chủ đề</h2>
     <p class="note">Để “Tất cả chủ đề” nếu bạn muốn học mọi từ trong trình độ đã chọn. Chọn một chủ đề để chỉ ôn phần đó.</p>
     <div class="chips">${chips.join("")}</div>
@@ -460,41 +893,75 @@ function renderDecks() {
   topmeta.textContent = chosen;
 }
 
+function medalGrid(kind) {
+  const have = new Set(STATE.medals || []);
+  return MEDALS.filter((medal) => medal.kind === kind).map((medal) => {
+    const on = have.has(medal.id);
+    const label = medal.kind === "streak" ? `Chuỗi ${medal.n} ngày` : `${medal.n} từ`;
+    return `<article class="medal${on ? "" : " locked"}">
+      <div class="medal-face" aria-hidden="true"><span>${medal.mark}</span></div>
+      <b>${esc(medal.name)}</b>
+      <small>${esc(label)}</small>
+    </article>`;
+  }).join("");
+}
+
+function stripHtml() {
+  const today = todayISO();
+  let day = addDays(today, -13);
+  const cells = [];
+  for (let i = 0; i < 14; i += 1) {
+    const row = STATE.log[day] || {};
+    const reviews = row.reviews || 0;
+    const added = row.added || 0;
+    const frozen = row.frozen && !reviews;
+    const date = new Date(`${day}T12:00:00`);
+    const extra = added ? `+${added}` : (frozen ? "❄️" : "");
+    cells.push(`<div class="cell${day === today ? " today" : ""}">
+      <span class="n">${reviews}</span>
+      <span class="a">${extra}</span>
+      <span class="d">${WEEK[date.getDay()]}</span>
+    </div>`);
+    day = addDays(day, 1);
+  }
+  return cells.join("");
+}
+
 function renderStats() {
   const numbers = totals();
   const accuracy = numbers.reviews ? `${Math.round((numbers.correct / numbers.reviews) * 100)}%` : "—";
   const streak = streakCount();
   const today = todayISO();
-  let day = addDays(today, -6);
-  const days = [];
-  let max = 1;
-  for (let i = 0; i < 7; i += 1) {
-    const count = (STATE.log[day] && STATE.log[day].reviews) || 0;
-    if (count > max) max = count;
-    const date = new Date(`${day}T12:00:00`);
-    days.push({ label: WEEK[date.getDay()], count });
-    day = addDays(day, 1);
-  }
-  const bars = days.map((item) => {
-    const height = Math.max(4, Math.round((item.count / max) * 72));
-    return `<div><i style="height:${height}px"></i><span>${item.label}</span></div>`;
-  }).join("");
+  const yesterday = addDays(today, -1);
+  const frozenYesterday = STATE.log[yesterday] && STATE.log[yesterday].frozen && !(STATE.log[yesterday].reviews > 0);
+  const streakNote = frozenYesterday
+    ? "Hôm qua dùng đóng băng, chuỗi vẫn giữ."
+    : streak
+      ? (studied(today) ? "Bạn đã học hôm nay." : "Học một lượt hôm nay để giữ chuỗi.")
+      : "Học một lượt để bắt đầu chuỗi.";
+  const freeze = STATE.freeze;
+  const freezeNote = freeze.bank >= 2
+    ? `Đóng băng: ${freeze.bank}/2 · đã trữ đủ.`
+    : `Đóng băng: ${freeze.bank}/2 · còn ${7 - freeze.progress} ngày học để thêm một lần.`;
   const leftNew = newRemaining();
-  const streakNote = streak
-    ? (studied(today) ? "Bạn đã học hôm nay." : "Học một lượt hôm nay để giữ chuỗi.")
-    : "Học một lượt để bắt đầu chuỗi.";
   main.innerHTML = `<section>
     <h1 class="section-title" style="margin-top:4px">Thống kê</h1>
     <div class="stats">
-      <article class="stat wide"><div class="k">Chuỗi ngày</div><div class="v">${streak}</div><div class="s">${esc(streakNote)}</div></article>
+      <article class="stat wide"><div class="k">Chuỗi ngày</div><div class="v">${streak}</div><div class="s">${esc(streakNote)} ${esc(freezeNote)}</div></article>
       <article class="stat"><div class="k">Đã học</div><div class="v">${numbers.learned.toLocaleString("vi-VN")}</div><div class="s">nhớ được ít nhất một lần</div></article>
+      <article class="stat"><div class="k">Điểm XP</div><div class="v">${numbers.xp.toLocaleString("vi-VN")}</div><div class="s">+1 mỗi lượt, +2 khi biết</div></article>
       <article class="stat"><div class="k">Đến hạn hôm nay</div><div class="v">${numbers.due.toLocaleString("vi-VN")}</div><div class="s">trong bộ đang chọn</div></article>
       <article class="stat"><div class="k">Độ chính xác</div><div class="v">${accuracy}</div><div class="s">${numbers.reviews.toLocaleString("vi-VN")} lượt ôn</div></article>
       <article class="stat"><div class="k">Hôm nay</div><div class="v">${numbers.todayRow.reviews}</div><div class="s">${numbers.todayRow.correct} lần biết</div></article>
     </div>
-    <h2 class="section-title">7 ngày</h2>
-    <div class="week" aria-hidden="true">${bars}</div>
-    <p class="note">${leftNew ? `Còn ${leftNew} thẻ mới trong hạn hôm nay. ` : ""}Tiến độ chỉ nằm trên trình duyệt này. Đổi máy hoặc xóa dữ liệu trang là mất chuỗi.</p>
+    <h2 class="section-title">14 ngày</h2>
+    <div class="strip" aria-label="14 ngày gần đây">${stripHtml()}</div>
+    <p class="note">Số lớn là lượt ôn. Số nhỏ có dấu + là từ bạn thêm. ❄️ là ngày được đóng băng chuỗi.</p>
+    <h2 class="section-title">Huy chương chuỗi</h2>
+    <div class="medals">${medalGrid("streak")}</div>
+    <h2 class="section-title">Huy chương từ vựng</h2>
+    <div class="medals">${medalGrid("words")}</div>
+    <p class="note">${leftNew ? `Còn ${leftNew} thẻ mới trong hạn hôm nay. ` : ""}Tiến độ chỉ nằm trên trình duyệt này. Đổi máy hoặc xóa dữ liệu trang là mất chuỗi. Xóa tiến độ vẫn giữ từ bạn tự thêm.</p>
     <button type="button" class="ghost" data-act="reset">Xóa tiến độ trên máy này</button>
   </section>`;
   topmeta.textContent = streak ? `${streak} ngày` : "Chưa có chuỗi";
@@ -550,8 +1017,9 @@ function errorHtml() {
 }
 
 function setNav() {
+  const current = view === "form" ? returnView : view;
   document.querySelectorAll("[data-nav]").forEach((button) => {
-    button.setAttribute("aria-current", button.dataset.nav === view ? "page" : "false");
+    button.setAttribute("aria-current", button.dataset.nav === current ? "page" : "false");
   });
 }
 
@@ -561,6 +1029,7 @@ function render() {
   if (view === "study") renderStudy();
   else if (view === "decks") renderDecks();
   else if (view === "stats") renderStats();
+  else if (view === "form") renderForm();
   else renderCredits();
   main.scrollTop = 0;
 }
@@ -571,14 +1040,22 @@ function grade(know) {
   if (!item) return;
   busy = true;
   const retry = item.retry;
+  let freezeEarned = false;
   if (!retry) {
     applySm2(item.id, know ? 4 : 1);
     bumpLog(know);
+    STATE.xp = (STATE.xp || 0) + 1 + (know ? 2 : 0);
+    freezeEarned = noteStudyDay();
     session.done += 1;
     if (!know) session.queue.push({ id: item.id, retry: true });
   }
   session.index += 1;
+  const medals = checkMedals();
   save();
+  const next = currentCard();
+  if (next) autoSpeak(next, "advance");
+  if (freezeEarned) toast("Bạn được 1 lần đóng băng chuỗi");
+  if (medals.length) celebrate(medals);
   if (navigator.vibrate) navigator.vibrate(12);
   const tilt = document.getElementById("tilt");
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -594,7 +1071,10 @@ function grade(know) {
 
 function flip() {
   const card = document.getElementById("card");
-  if (card) card.classList.toggle("is-flipped");
+  if (!card) return;
+  card.classList.toggle("is-flipped");
+  const word = currentCard();
+  if (word) autoSpeak(word, "flip");
 }
 
 function bindSwipe() {
@@ -687,9 +1167,17 @@ function changeNew(delta) {
 }
 
 function resetProgress() {
-  if (!window.confirm("Xóa toàn bộ tiến độ ôn trên máy này?")) return;
+  if (!window.confirm("Xóa toàn bộ tiến độ ôn trên máy này? Từ bạn tự thêm vẫn được giữ.")) return;
+  const own = STATE.own || [];
+  const autoSpeak = STATE.settings.autoSpeak !== false;
+  const ownDeck = STATE.settings.ownDeck !== false;
   localStorage.removeItem(KEY);
   STATE = loadState();
+  STATE.own = own;
+  STATE.settings.autoSpeak = autoSpeak;
+  STATE.settings.ownDeck = ownDeck;
+  reindex();
+  save();
   session = null;
   view = "stats";
   render();
@@ -734,6 +1222,47 @@ document.addEventListener("click", (event) => {
   if (name === "new-inc") changeNew(1);
   if (name === "reset") resetProgress();
   if (name === "retry-load") boot();
+  if (name === "add-word") {
+    if (!DATA) return;
+    openForm("");
+  }
+  if (name === "edit-word") openForm(act.dataset.id);
+  if (name === "delete-word") deleteOwn(act.dataset.id);
+  if (name === "own-deck") {
+    STATE.settings.ownDeck = STATE.settings.ownDeck === false;
+    save();
+    session = null;
+    reindex();
+    render();
+  }
+  if (name === "close-form") {
+    view = returnView || "decks";
+    render();
+  }
+  if (name === "prefill") {
+    const form = act.closest("form");
+    if (form && form.elements.meaning) form.elements.meaning.value = act.dataset.meaning || "";
+  }
+});
+
+document.addEventListener("change", (event) => {
+  const act = event.target.closest("[data-act]");
+  if (!act || act.dataset.act !== "auto-speak") return;
+  STATE.settings.autoSpeak = event.target.checked;
+  save();
+});
+
+document.addEventListener("input", (event) => {
+  const form = event.target.form;
+  if (!form || form.id !== "word-form" || event.target.name !== "word") return;
+  updatePrefill(form);
+});
+
+document.addEventListener("submit", (event) => {
+  const form = event.target;
+  if (!form || form.id !== "word-form") return;
+  event.preventDefault();
+  saveOwn(form);
 });
 
 document.addEventListener("keydown", (event) => {
@@ -754,18 +1283,26 @@ async function boot() {
   main.innerHTML = `<section class="empty"><h1>Đang mở bộ thẻ…</h1><p>Một lát thôi.</p></section>`;
   topmeta.textContent = "";
   try {
-    const response = await fetch("data/vocab.json");
-    if (!response.ok) throw new Error("bad status");
-    DATA = await response.json();
-    INDEX = new Map(DATA.cards.map((card) => [card.id, card]));
+    const [vocabRes, iconRes] = await Promise.all([
+      fetch("data/vocab.json"),
+      fetch("data/icons.json").catch(() => null),
+    ]);
+    if (!vocabRes.ok) throw new Error("bad status");
+    DATA = await vocabRes.json();
+    ICONS = iconRes && iconRes.ok ? await iconRes.json() : {};
     STATE = loadState();
+    reindex();
     const known = new Set((DATA.topics || []).map((topic) => topic.id));
     STATE.settings.topics = STATE.settings.topics.filter((id) => known.has(id));
+    const changed = reconcileFreezes();
+    const fresh = checkMedals();
+    if (changed || fresh.length) save();
     if (window.speechSynthesis) {
       window.speechSynthesis.getVoices();
       window.speechSynthesis.addEventListener("voiceschanged", () => window.speechSynthesis.getVoices());
     }
     render();
+    if (fresh.length) celebrate(fresh);
   } catch {
     main.innerHTML = errorHtml();
     topmeta.textContent = "";
