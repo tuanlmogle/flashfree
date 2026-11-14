@@ -13,6 +13,16 @@
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f3ecdf">
+  <script>
+    try {
+      var theme = localStorage.getItem("latu-theme");
+      var colors = { paper: "#f3ecdf", sea: "#e7f1f4", moss: "#e7f2ea", blossom: "#f8ecee", dark: "#161311" };
+      if (theme && colors[theme]) {
+        document.documentElement.setAttribute("data-theme", theme);
+        document.querySelector('meta[name="theme-color"]').setAttribute("content", colors[theme]);
+      }
+    } catch (e) {}
+  </script>
   <title>FlashFree — từ vựng tiếng Anh</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231f5f6b'/%3E%3Crect x='7' y='6' width='18' height='20' rx='3' fill='%23fffdf8'/%3E%3Cpath d='M11 13h10M11 17h7' stroke='%231f5f6b' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/app.css">
@@ -48,7 +58,7 @@
   </div>
   <p class="toast" id="toast" role="status" hidden></p>
   <noscript>
-    <p class="noscript">FlashFree cần JavaScript để lật thẻ và lưu tiến độ trên máy bạn. Nguồn từ vựng: Wiktionary tiếng Việt (CC BY-SA 4.0), CEFR-J, Octanove, Tatoeba.</p>
+    <p class="noscript">FlashFree cần JavaScript để lật thẻ và lưu tiến độ trên máy bạn. Nguồn: Wiktionary tiếng Việt (CC BY-SA 4.0), CEFR-J, Octanove, Tatoeba (CC BY 2.0 FR), wordfreq (CC BY-SA 4.0), Open English WordNet (CC BY 4.0), OpenMoji (CC BY-SA 4.0), Wikimedia Commons.</p>
   </noscript>
   <script src="js/app.js"></script>
 </body>

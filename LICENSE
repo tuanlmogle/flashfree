@@ -21,6 +21,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 This license covers the application code only (HTML, CSS, JavaScript, and
-scripts/build_vocab.py). It does not cover data/vocab.json or the fonts.
-Vocabulary licenses are in DATA_SOURCES.md. Fonts are SIL Open Font License
-1.1; see fonts/OFL-BeVietnamPro.txt and fonts/OFL-Fraunces.txt.
+the scripts in scripts/). It does not cover the vocabulary JSON files or the
+fonts. Vocabulary and image licenses are in DATA_SOURCES.md. Fonts are SIL
+Open Font License 1.1; see fonts/OFL-BeVietnamPro.txt and fonts/OFL-Fraunces.txt.

@@ -27,6 +27,50 @@ const POS_VI = {
 };
 const WEEK = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
 const KEY = "latu-state-v1";
+const THEME_KEY = "latu-theme";
+const MODES = ["cards", "listen", "cloze"];
+const RATES = [0.8, 1, 1.25, 1.5];
+const REPEATS = [1, 2, 3, 0];
+const THEMES = {
+  paper: { name: "Giấy", color: "#f3ecdf" },
+  sea: { name: "Biển", color: "#e7f1f4" },
+  moss: { name: "Rêu", color: "#e7f2ea" },
+  blossom: { name: "Hoa", color: "#f8ecee" },
+  dark: { name: "Tối", color: "#161311" },
+};
+const TOPIC_MIGRATE = {
+  hobbies: ["sports", "music", "art"],
+  home: ["house", "furniture", "kitchen"],
+  town: ["city", "shopping"],
+  arts: ["art"],
+  personal: ["body", "emotions", "personality"],
+  colours: ["colors"],
+  news: ["media", "politics"],
+  technical: ["science", "technology", "computers"],
+  services: ["shopping", "hotel"],
+};
+const LICENSE_NAME = {
+  "by-sa-4": ["CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/"],
+  "by-sa-4.0": ["CC BY-SA 4.0", "https://creativecommons.org/licenses/by-sa/4.0/"],
+  "by-sa-3": ["CC BY-SA 3.0", "https://creativecommons.org/licenses/by-sa/3.0/"],
+  "by-sa-3.0": ["CC BY-SA 3.0", "https://creativecommons.org/licenses/by-sa/3.0/"],
+  "by-sa-2.5": ["CC BY-SA 2.5", "https://creativecommons.org/licenses/by-sa/2.5/"],
+  "by-sa-2": ["CC BY-SA 2.0", "https://creativecommons.org/licenses/by-sa/2.0/"],
+  "by-sa-2.0": ["CC BY-SA 2.0", "https://creativecommons.org/licenses/by-sa/2.0/"],
+  "by-4": ["CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/"],
+  "by-4.0": ["CC BY 4.0", "https://creativecommons.org/licenses/by/4.0/"],
+  "by-3": ["CC BY 3.0", "https://creativecommons.org/licenses/by/3.0/"],
+  "by-3.0": ["CC BY 3.0", "https://creativecommons.org/licenses/by/3.0/"],
+  "by-2.5": ["CC BY 2.5", "https://creativecommons.org/licenses/by/2.5/"],
+  "by-2": ["CC BY 2.0", "https://creativecommons.org/licenses/by/2.0/"],
+  "by-2.0": ["CC BY 2.0", "https://creativecommons.org/licenses/by/2.0/"],
+  cc0: ["CC0 1.0", "https://creativecommons.org/publicdomain/zero/1.0/"],
+  pd: ["Public domain", "https://creativecommons.org/publicdomain/mark/1.0/"],
+  gfdl: ["GFDL", "https://www.gnu.org/licenses/fdl-1.3.html"],
+  "gfdl-1.2": ["GFDL 1.2", "https://www.gnu.org/licenses/old-licenses/fdl-1.2.html"],
+  "gfdl-1.3": ["GFDL 1.3", "https://www.gnu.org/licenses/fdl-1.3.html"],
+};
+const OPENMOJI_SVG = "https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@17.0.0/color/svg/";
 const NEW_STEPS = [5, 10, 15, 20, 25, 30, 35, 40];
 const MEDALS = [
   { id: "streak-3", kind: "streak", n: 3, name: "Ba ngày", mark: "🌱" },
@@ -62,6 +106,8 @@ let toastTimer = 0;
 const toastQueue = [];
 let toastOn = false;
 let lastAuto = { stamp: "", at: 0 };
+const loadedLevels = new Set();
+const listenRun = { token: 0, timer: 0, playing: false };
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -93,7 +139,10 @@ function hash(text) {
 
 function defaultState() {
   return {
-    settings: { newPerDay: 10, levels: ["B1", "B2"], topics: [], autoSpeak: true, ownDeck: true },
+    settings: {
+      newPerDay: 10, levels: ["B1", "B2"], topics: [], autoSpeak: true, ownDeck: true,
+      theme: "paper", mode: "cards", listenRate: 1, listenRepeat: 1,
+    },
     cards: {},
     introduced: {},
     log: {},
@@ -162,6 +211,11 @@ function loadState() {
     if (!NEW_STEPS.includes(Number(settings.newPerDay))) settings.newPerDay = 10;
     settings.autoSpeak = settings.autoSpeak !== false;
     settings.ownDeck = settings.ownDeck !== false;
+    if (!THEMES[settings.theme]) settings.theme = "paper";
+    if (!MODES.includes(settings.mode)) settings.mode = "cards";
+    if (!RATES.includes(Number(settings.listenRate))) settings.listenRate = 1;
+    if (!REPEATS.includes(Number(settings.listenRepeat))) settings.listenRepeat = 1;
+    settings.topics = migrateTopics(settings.topics);
     const log = parsed.log && typeof parsed.log === "object" ? parsed.log : {};
     const knownMedals = new Set(MEDALS.map((medal) => medal.id));
     return {
@@ -185,6 +239,7 @@ function save() {
     if (day < cutoff) delete STATE.log[day];
   }
   localStorage.setItem(KEY, JSON.stringify(STATE));
+  try { localStorage.setItem(THEME_KEY, STATE.settings.theme || "paper"); } catch { /* ignore */ }
 }
 
 function newOwnId() {
@@ -313,6 +368,106 @@ function checkMedals() {
   return fresh;
 }
 
+function migrateTopics(list) {
+  const out = [];
+  const seen = new Set();
+  for (const id of Array.isArray(list) ? list : []) {
+    const next = Object.prototype.hasOwnProperty.call(TOPIC_MIGRATE, id) ? TOPIC_MIGRATE[id] : [id];
+    for (const item of next) {
+      if (!item || seen.has(item)) continue;
+      seen.add(item);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+function applyTheme(id) {
+  const theme = THEMES[id] ? id : "paper";
+  document.documentElement.setAttribute("data-theme", theme);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", THEMES[theme].color);
+  if (STATE && STATE.settings) STATE.settings.theme = theme;
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* ignore */ }
+}
+
+function studyMode() {
+  return MODES.includes(STATE.settings.mode) ? STATE.settings.mode : "cards";
+}
+
+function imageUrl(img) {
+  if (!img) return "";
+  if (img.t === "o" && img.h) return `${OPENMOJI_SVG}${encodeURIComponent(img.h)}.svg`;
+  if (img.t === "c" && img.f) {
+    return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(img.f)}?width=320`;
+  }
+  return "";
+}
+
+function imageCredit(img) {
+  if (!img) return "";
+  if (img.t === "o") {
+    const who = img.a ? `${esc(img.a)} · ` : "";
+    return `${who}OpenMoji, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a> · <a href="https://openmoji.org/" target="_blank" rel="noopener">openmoji.org</a>`;
+  }
+  const lic = LICENSE_NAME[img.l] || ["Giấy phép mở", "https://commons.wikimedia.org/"];
+  const file = `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(img.f || "")}`;
+  const who = img.a ? esc(img.a) : "Wikimedia Commons";
+  return `${who} · <a href="${esc(lic[1])}" target="_blank" rel="noopener">${esc(lic[0])}</a> · <a href="${file}" target="_blank" rel="noopener">Wikimedia Commons</a>`;
+}
+
+function pictureHtml(card) {
+  const src = imageUrl(card.img);
+  const icon = memoryIcon(card);
+  if (!src) return icon ? `<p class="memo" aria-hidden="true">${esc(icon)}</p>` : "";
+  return `<div class="picbox wait">
+    <img class="pic" alt="" src="${esc(src)}" decoding="async">
+    ${icon ? `<p class="memo" aria-hidden="true">${esc(icon)}</p>` : ""}
+    <button type="button" class="info" data-act="img-info" aria-label="Nguồn ảnh">i</button>
+  </div>`;
+}
+
+function bindPicture(root) {
+  const img = root.querySelector(".pic");
+  const box = root.querySelector(".picbox");
+  if (!img || !box) return;
+  const ok = () => box.classList.add("has-pic");
+  const bad = () => {
+    box.classList.remove("wait");
+    img.remove();
+  };
+  if (img.complete && img.naturalWidth > 0) ok();
+  else {
+    img.addEventListener("load", ok);
+    img.addEventListener("error", bad);
+  }
+}
+
+function showImageInfo() {
+  const card = currentCard();
+  if (!card || !card.img) return;
+  let pop = document.getElementById("imgpop");
+  if (!pop) {
+    pop = document.createElement("div");
+    pop.id = "imgpop";
+    pop.className = "imgpop";
+    document.getElementById("app").appendChild(pop);
+  }
+  pop.hidden = false;
+  pop.innerHTML = `<p>${imageCredit(card.img)}</p><button type="button" data-act="close-pop">Đóng</button>`;
+}
+
+function hideImageInfo() {
+  const pop = document.getElementById("imgpop");
+  if (pop) pop.hidden = true;
+}
+
+function modeSwitch() {
+  const mode = studyMode();
+  const button = (id, label) => `<button type="button" data-act="mode" data-id="${id}" class="${mode === id ? "on" : ""}" aria-pressed="${mode === id}">${label}</button>`;
+  return `<div class="modes" role="group" aria-label="Cách học">${button("cards", "Thẻ")}${button("listen", "Nghe")}${button("cloze", "Điền")}</div>`;
+}
+
 function topicName(id) {
   const found = (DATA.topics || []).find((topic) => topic.id === id);
   return found ? found.name : id;
@@ -386,15 +541,27 @@ function planToday(today) {
 
 function ensureSession() {
   const key = sessionKey();
-  if (session && session.key === key) return;
+  if (session && session.key === key) {
+    if (!session.graded) session.graded = new Set();
+    return;
+  }
   const today = todayISO();
   const plan = planToday(today);
   const queue = plan.due.concat(plan.fresh).map((card) => ({ id: card.id, retry: false }));
-  session = { key, queue, index: 0, total: queue.length, done: 0 };
+  session = { key, queue, index: 0, total: queue.length, done: 0, graded: new Set(), listenIndex: 0, clozeIndex: 0 };
 }
 
 function currentItem() {
-  return session ? session.queue[session.index] || null : null;
+  if (!session) return null;
+  const mode = studyMode();
+  if (mode === "listen") return session.queue[session.listenIndex] || null;
+  if (mode === "cloze") return currentClozeItem();
+  while (session.index < session.queue.length) {
+    const item = session.queue[session.index];
+    if (item.retry || !session.graded.has(item.id)) return item;
+    session.index += 1;
+  }
+  return null;
 }
 
 function currentCard() {
@@ -589,8 +756,7 @@ function cardFaces(card, item) {
   const topic = (card.topics || [])[0];
   const topicPill = topic ? `<span class="pill">${esc(topicName(topic))}</span>` : "";
   const meta = card.own ? (pos ? `Của tôi · ${pos}` : "Của tôi") : `${card.level} · ${pos}`;
-  const icon = memoryIcon(card);
-  const memo = icon ? `<p class="memo" aria-hidden="true">${esc(icon)}</p>` : "";
+  const memo = pictureHtml(card);
   let example = `<p class="hint">Chưa có câu ví dụ cho từ này.</p>`;
   if (card.example) {
     const ref = card.tatoeba || {};
@@ -642,12 +808,14 @@ function fillCard() {
   if (!card || !node) return;
   node.classList.remove("is-flipped");
   node.innerHTML = cardFaces(card, item);
+  bindPicture(node);
   updateStudyChrome();
   autoSpeak(card, "show");
 }
 
 function studyShell() {
   return `<section class="study">
+    ${modeSwitch()}
     <div class="bar" aria-hidden="true"><span></span></div>
     <div class="stage"><div class="tilt" id="tilt"><article class="card" id="card"></article></div></div>
     <p class="gesture">Vuốt phải: biết · vuốt trái: chưa biết</p>
@@ -683,6 +851,15 @@ function doneHtml() {
 
 function renderStudy() {
   ensureSession();
+  const mode = studyMode();
+  if (mode === "listen") {
+    renderListen();
+    return;
+  }
+  if (mode === "cloze") {
+    renderCloze();
+    return;
+  }
   if (!currentItem()) {
     main.innerHTML = doneHtml();
     topmeta.textContent = STATE.settings.levels.join(" · ") || "Chưa chọn";
@@ -693,15 +870,376 @@ function renderStudy() {
   bindSwipe();
 }
 
+function stopAudio() {
+  listenRun.token += 1;
+  listenRun.playing = false;
+  window.clearTimeout(listenRun.timer);
+  if (window.speechSynthesis) {
+    try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+  }
+}
+
+function formsOf(lemma) {
+  const word = String(lemma || "").toLowerCase();
+  const found = new Set([word]);
+  if (!word || word.includes(" ") || word.length < 4) return found;
+  ["s", "es", "ed", "ing", "d"].forEach((suffix) => found.add(word + suffix));
+  if (word.endsWith("e")) {
+    found.add(word.slice(0, -1) + "ing");
+    found.add(word.slice(0, -1) + "ed");
+  }
+  if (word.endsWith("y") && !"aeiou".includes(word[word.length - 2])) {
+    found.add(word.slice(0, -1) + "ies");
+    found.add(word.slice(0, -1) + "ied");
+  }
+  if (word.length > 4 && !"aeiouy".includes(word[word.length - 1]) && "aeiou".includes(word[word.length - 2]) && !"aeiou".includes(word[word.length - 3])) {
+    found.add(word + word[word.length - 1] + "ed");
+    found.add(word + word[word.length - 1] + "ing");
+  }
+  return found;
+}
+
+function escapeReg(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function blankSentence(card) {
+  if (!card || !card.example) return null;
+  const forms = [...formsOf(card.word)].filter(Boolean).sort((a, b) => b.length - a.length);
+  if (!forms.length) return null;
+  const re = new RegExp(`(^|[^A-Za-z'])(${forms.map(escapeReg).join("|")})(?![A-Za-z'])`, "i");
+  const match = card.example.match(re);
+  if (!match) return null;
+  const surface = match[2];
+  const start = match.index + match[1].length;
+  return {
+    surface,
+    before: card.example.slice(0, start),
+    after: card.example.slice(start + surface.length),
+  };
+}
+
+function mulberry32(seed) {
+  let value = seed >>> 0;
+  return () => {
+    value = (value + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(value ^ (value >>> 15), 1 | value);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function clozeItems() {
+  return session.queue.filter((item) => blankSentence(INDEX.get(item.id)));
+}
+
+function currentClozeItem() {
+  const items = clozeItems();
+  while (session.clozeIndex < items.length) {
+    const item = items[session.clozeIndex];
+    if (item.cloze && !item.cloze.done) return item;
+    if (item.retry || !session.graded.has(item.id)) return item;
+    session.clozeIndex += 1;
+  }
+  return null;
+}
+
+function clozeOptions(card, surface) {
+  const pool = DATA.cards.filter((item) => item.id !== card.id && item.pos === card.pos && item.word && item.word.length < 24);
+  const same = pool.filter((item) => item.level === card.level);
+  const source = same.length >= 8 ? same : pool;
+  const rand = mulberry32(hash(`${card.id}:${surface}`));
+  const copy = source.slice();
+  const picked = [];
+  const used = new Set([card.word.toLowerCase(), surface.toLowerCase()]);
+  while (picked.length < 3 && copy.length) {
+    const index = Math.floor(rand() * copy.length);
+    const [item] = copy.splice(index, 1);
+    const key = item.word.toLowerCase();
+    if (used.has(key)) continue;
+    used.add(key);
+    picked.push(item.word);
+  }
+  const options = picked.concat([surface]);
+  for (let i = options.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    [options[i], options[j]] = [options[j], options[i]];
+  }
+  return options;
+}
+
+function normAnswer(text) {
+  return String(text || "").trim().toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+}
+
+function recordGrade(id, know, retry) {
+  let freezeEarned = false;
+  if (!retry) {
+    applySm2(id, know ? 4 : 1);
+    bumpLog(know);
+    STATE.xp = (STATE.xp || 0) + 1 + (know ? 2 : 0);
+    freezeEarned = noteStudyDay();
+    session.done += 1;
+    session.graded.add(id);
+    if (!know) session.queue.push({ id, retry: true });
+  }
+  const medals = checkMedals();
+  save();
+  return { freezeEarned, medals };
+}
+
+function renderCloze() {
+  const item = currentClozeItem();
+  if (!clozeItems().length) {
+    main.innerHTML = `<section class="empty">
+      <h1>Chưa có câu để điền</h1>
+      <p>Bài điền chỗ trống cần câu ví dụ. Bộ đang chọn chưa có câu, hoặc các câu không chứa đúng từ. Hãy học bằng thẻ, hoặc chọn thêm trình độ.</p>
+      ${modeSwitch()}
+    </section>`;
+    topmeta.textContent = "Điền từ";
+    return;
+  }
+  if (!item) {
+    main.innerHTML = doneHtml();
+    topmeta.textContent = STATE.settings.levels.join(" · ") || "Điền từ";
+    return;
+  }
+  const card = INDEX.get(item.id);
+  const blank = blankSentence(card);
+  const options = clozeOptions(card, blank.surface);
+  const answered = item.cloze && !item.cloze.done;
+  const know = item.cloze && item.cloze.know;
+  const given = item.cloze ? normAnswer(item.cloze.given) : "";
+  const choices = options.map((option) => {
+    const hit = normAnswer(option) === normAnswer(blank.surface) || normAnswer(option) === normAnswer(card.word);
+    const picked = given && given === normAnswer(option);
+    let mark = "";
+    if (answered && hit) mark = " good";
+    else if (answered && picked) mark = " bad";
+    return `<button type="button" class="choice${mark}" data-act="cloze-choice" data-word="${esc(option)}" ${answered ? "disabled" : ""}>${esc(option)}</button>`;
+  }).join("");
+  const result = answered
+    ? `<p class="cloze-result ${know ? "good" : "bad"}">${know ? "Đúng." : "Chưa đúng."} <b>${esc(blank.surface)}</b> · ${esc(card.meaning)}</p>
+       ${card.exampleVi ? `<p class="ex-vi">${esc(card.exampleVi)}</p>` : ""}
+       <button type="button" class="primary" data-act="cloze-next">Tiếp</button>`
+    : `<form class="typebox" id="cloze-form">
+        <input name="answer" autocomplete="off" autocapitalize="off" placeholder="Hoặc gõ từ tiếng Anh" aria-label="Gõ từ tiếng Anh">
+        <button type="submit">Kiểm tra</button>
+      </form>`;
+  const remain = clozeItems().filter((row) => !(row.cloze && row.cloze.done) && (row.retry || !session.graded.has(row.id) || (row.cloze && !row.cloze.done))).length;
+  main.innerHTML = `<section class="study cloze">
+    ${modeSwitch()}
+    <div class="bar" aria-hidden="true"><span style="width:${session.total ? Math.min(100, Math.round((session.done / session.total) * 100)) : 0}%"></span></div>
+    <article class="cloze-card">
+      <div class="pillrow"><span class="pill">${esc(card.level)} · ${esc(POS_VI[card.pos] || card.pos || "từ")}</span></div>
+      <p class="cloze-hint">${esc(card.meaning)}</p>
+      <p class="cloze-sent">${esc(blank.before)}<span class="blank">${answered ? esc(blank.surface) : "_____"}</span>${esc(blank.after)}</p>
+      <div class="choices">${choices}</div>
+      ${result}
+    </article>
+  </section>`;
+  topmeta.textContent = `Điền · còn ${remain}`;
+}
+
+function answerCloze(item, given) {
+  if (!item || item.cloze || !String(given || "").trim()) return;
+  const card = INDEX.get(item.id);
+  const blank = blankSentence(card);
+  if (!blank) return;
+  const typed = normAnswer(given);
+  const ok = typed === normAnswer(blank.surface) || typed === normAnswer(card.word);
+  item.cloze = { know: ok, given, done: false };
+  const result = recordGrade(item.id, ok, !!item.retry);
+  if (result.freezeEarned) toast("Bạn được 1 lần đóng băng chuỗi");
+  if (result.medals.length) celebrate(result.medals);
+  if (navigator.vibrate) navigator.vibrate(12);
+  renderCloze();
+}
+
+function hasViVoice() {
+  const synth = window.speechSynthesis;
+  if (!synth) return false;
+  return synth.getVoices().some((voice) => /^vi([-_]|$)/i.test(voice.lang || ""));
+}
+
+function speakPiece(text, lang, rate, token) {
+  return new Promise((resolve) => {
+    const synth = window.speechSynthesis;
+    if (!synth || !text || listenRun.token !== token) {
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
+    try {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = lang;
+      utter.rate = rate;
+      const voices = synth.getVoices();
+      const want = lang.toLowerCase();
+      const voice = voices.find((item) => (item.lang || "").toLowerCase().replace("_", "-") === want)
+        || voices.find((item) => (item.lang || "").toLowerCase().replace("_", "-").startsWith(want.slice(0, 2)));
+      if (lang.toLowerCase().startsWith("vi") && !voice) {
+        finish(false);
+        return;
+      }
+      if (voice) utter.voice = voice;
+      utter.onend = () => finish(listenRun.token === token);
+      utter.onerror = () => finish(false);
+      synth.speak(utter);
+      window.setTimeout(() => finish(listenRun.token === token), Math.min(14000, 700 + text.length * 95 / rate));
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+function waitMs(ms, token) {
+  return new Promise((resolve) => {
+    window.clearTimeout(listenRun.timer);
+    listenRun.timer = window.setTimeout(() => resolve(listenRun.token === token && listenRun.playing), ms);
+  });
+}
+
+function listenCard() {
+  return session.queue[session.listenIndex] ? INDEX.get(session.queue[session.listenIndex].id) : null;
+}
+
+function renderListen() {
+  const card = listenCard();
+  const total = session.queue.length;
+  if (!card) {
+    main.innerHTML = `<section class="empty">
+      <h1>Hết danh sách nghe</h1>
+      <p>Bạn đã nghe hết các thẻ của hôm nay. Chế độ này không ghi vào lịch ôn. Quay lại thẻ nếu bạn muốn bấm Biết hoặc Chưa biết.</p>
+      ${modeSwitch()}
+      <button type="button" class="primary" data-act="listen-restart">Nghe lại từ đầu</button>
+    </section>`;
+    topmeta.textContent = "Nghe";
+    return;
+  }
+  const rate = Number(STATE.settings.listenRate) || 1;
+  const repeat = Number(STATE.settings.listenRepeat);
+  const rates = RATES.map((value) => `<button type="button" data-act="listen-rate" data-value="${value}" class="${value === rate ? "on" : ""}">${value === 1 ? "1×" : `${value}×`}</button>`).join("");
+  const repeats = REPEATS.map((value) => `<button type="button" data-act="listen-repeat" data-value="${value}" class="${value === repeat ? "on" : ""}">${value === 0 ? "∞" : `${value}×`}</button>`).join("");
+  const viNote = hasViVoice() ? "" : `<p class="note">Máy này không có giọng tiếng Việt, nên nghĩa hiện bằng chữ.</p>`;
+  main.innerHTML = `<section class="study listen">
+    ${modeSwitch()}
+    <div class="bar" aria-hidden="true"><span style="width:${total ? Math.min(100, Math.round((session.listenIndex / total) * 100)) : 0}%"></span></div>
+    <article class="listen-card" id="listen-card">
+      ${pictureHtml(card)}
+      <div class="pillrow"><span class="pill">${esc(card.level)} · ${session.listenIndex + 1}/${total}</span></div>
+      <h1 class="${wordClass(card.word)} step-word">${esc(card.word)}</h1>
+      ${card.ipa ? `<p class="ipa">/${esc(card.ipa)}/</p>` : ""}
+      <p class="meaning step-vi">${esc(card.meaning)}</p>
+      ${card.example ? `<p class="ex-en step-ex">${esc(card.example)}</p>` : `<p class="hint step-ex">Không có câu ví dụ.</p>`}
+    </article>
+    <div class="listen-controls">
+      <button type="button" data-act="listen-prev" aria-label="Thẻ trước">‹</button>
+      <button type="button" class="primary listen-go" data-act="listen-toggle">${listenRun.playing ? "Tạm dừng" : "Nghe"}</button>
+      <button type="button" data-act="listen-next" aria-label="Thẻ sau">›</button>
+    </div>
+    <div class="tune"><span>Tốc độ</span><div class="pills">${rates}</div></div>
+    <div class="tune"><span>Lặp</span><div class="pills">${repeats}</div></div>
+    ${viNote}
+    <p class="note">Nghe từ, nghĩa, rồi câu ví dụ. Bấm Nghe một lần — máy cần cử chỉ đó trước khi đọc, nhất là trên iPhone. Chế độ này không tính vào lịch SM-2.</p>
+  </section>`;
+  bindPicture(main);
+  topmeta.textContent = `Nghe · ${session.listenIndex + 1}/${total}`;
+}
+
+function markListenStep(name) {
+  const card = document.getElementById("listen-card");
+  if (!card) return;
+  card.querySelectorAll(".step-word, .step-vi, .step-ex").forEach((node) => node.classList.remove("live"));
+  const target = card.querySelector(name === "word" ? ".step-word" : name === "vi" ? ".step-vi" : ".step-ex");
+  if (target) target.classList.add("live");
+}
+
+async function playListenPass(token) {
+  const card = listenCard();
+  if (!card) return false;
+  const rate = Number(STATE.settings.listenRate) || 1;
+  markListenStep("word");
+  await speakPiece(card.word, "en-US", rate, token);
+  if (!(await waitMs(650 / rate, token))) return false;
+  markListenStep("vi");
+  if (hasViVoice()) await speakPiece(card.meaning, "vi-VN", rate, token);
+  else if (!(await waitMs(1100, token))) return false;
+  if (!(await waitMs(500 / rate, token))) return false;
+  if (card.example) {
+    markListenStep("ex");
+    await speakPiece(card.example, "en-US", Math.min(rate, 1.15), token);
+    if (!(await waitMs(700 / rate, token))) return false;
+  }
+  return listenRun.token === token && listenRun.playing;
+}
+
+async function listenLoop(token) {
+  let cycles = 0;
+  while (listenRun.token === token && listenRun.playing) {
+    const ok = await playListenPass(token);
+    if (!ok) return;
+    cycles += 1;
+    const repeat = Number(STATE.settings.listenRepeat);
+    if (repeat === 0) continue;
+    if (cycles < repeat) continue;
+    cycles = 0;
+    session.listenIndex += 1;
+    if (!listenCard()) {
+      listenRun.playing = false;
+      renderListen();
+      return;
+    }
+    const playing = listenRun.playing;
+    const kept = listenRun.token;
+    renderListen();
+    listenRun.playing = playing;
+    listenRun.token = kept;
+    const button = main.querySelector("[data-act='listen-toggle']");
+    if (button) button.textContent = "Tạm dừng";
+  }
+}
+
+function startListen() {
+  if (!listenCard()) {
+    session.listenIndex = 0;
+  }
+  listenRun.playing = true;
+  listenRun.token += 1;
+  const token = listenRun.token;
+  renderListen();
+  listenRun.playing = true;
+  listenRun.token = token;
+  const button = main.querySelector("[data-act='listen-toggle']");
+  if (button) button.textContent = "Tạm dừng";
+  listenLoop(token);
+}
+
+function pauseListen() {
+  listenRun.playing = false;
+  listenRun.token += 1;
+  window.clearTimeout(listenRun.timer);
+  if (window.speechSynthesis) {
+    try { window.speechSynthesis.cancel(); } catch { /* ignore */ }
+  }
+  const button = main.querySelector("[data-act='listen-toggle']");
+  if (button) button.textContent = "Nghe";
+}
+
 function countLevel(level) {
-  return DATA.cards.reduce((sum, card) => sum + (card.level === level ? 1 : 0), 0);
+  return Number((DATA.counts && DATA.counts[level]) || 0);
 }
 
 function countTopic(id) {
-  return DATA.cards.reduce((sum, card) => {
-    if (!STATE.settings.levels.includes(card.level)) return sum;
-    return sum + ((card.topics || []).includes(id) ? 1 : 0);
-  }, 0);
+  const row = (DATA.topicLevels && DATA.topicLevels[id]) || {};
+  const levels = STATE.settings.levels;
+  if (!levels.length) return Object.values(row).reduce((sum, n) => sum + Number(n || 0), 0);
+  return levels.reduce((sum, level) => sum + Number(row[level] || 0), 0);
 }
 
 function ownDeckHtml() {
@@ -879,6 +1417,14 @@ function renderDecks() {
       <strong>${settings.newPerDay} thẻ mới</strong>
       <button type="button" data-act="new-inc" aria-label="Tăng số thẻ mới">+</button>
     </div>
+    <h2 class="section-title">Cách học</h2>
+    ${modeSwitch()}
+    <p class="note">Thẻ lật như cũ. Nghe đọc từ, nghĩa và câu rồi sang thẻ sau. Điền chọn hoặc gõ từ còn thiếu trong câu ví dụ; đúng tính là Biết, sai tính là Chưa biết.</p>
+    <h2 class="section-title">Màu</h2>
+    <div class="themes">${Object.entries(THEMES).map(([id, theme]) => {
+      const on = (settings.theme || "paper") === id;
+      return `<button type="button" class="swatch${on ? " on" : ""}" data-act="theme" data-id="${id}" aria-pressed="${on}"><i style="background:${theme.color}"></i>${esc(theme.name)}</button>`;
+    }).join("")}</div>
     <h2 class="section-title">Đọc thẻ</h2>
     <label class="switch">
       <input type="checkbox" data-act="auto-speak" ${settings.autoSpeak !== false ? "checked" : ""}>
@@ -886,8 +1432,8 @@ function renderDecks() {
     </label>
     <h2 class="section-title">Từ của tôi</h2>
     ${ownDeckHtml()}
-    <h2 class="section-title">Chủ đề</h2>
-    <p class="note">Để “Tất cả chủ đề” nếu bạn muốn học mọi từ trong trình độ đã chọn. Chọn một chủ đề để chỉ ôn phần đó.</p>
+    <h2 class="section-title">Chủ đề · ${(DATA.topics || []).length}</h2>
+    <p class="note">Để “Tất cả chủ đề” nếu bạn muốn học mọi từ trong trình độ đã chọn. Số trên mỗi chủ đề là số từ trong trình độ đang bật.</p>
     <div class="chips">${chips.join("")}</div>
   </section>`;
   topmeta.textContent = chosen;
@@ -970,9 +1516,11 @@ function renderStats() {
 function renderCredits() {
   const counts = DATA.counts || {};
   const bits = LEVELS.map((level) => `${level} ${Number(counts[level] || 0).toLocaleString("vi-VN")}`).join(" · ");
+  const images = DATA.imageCounts || {};
+  const imageBits = LEVELS.map((level) => `${level} ${Number(images[level] || 0).toLocaleString("vi-VN")}`).join(" · ");
   main.innerHTML = `<section class="lede">
     <h1>Nguồn dữ liệu</h1>
-    <p>Bộ thẻ này có ${Number(DATA.total || 0).toLocaleString("vi-VN")} từ (${esc(bits)}). Nghĩa và phiên âm lấy từ Wiktionary, mức CEFR lấy từ CEFR-J và Octanove, câu ví dụ lấy từ Tatoeba khi có câu chứa từ đó. Dữ liệu đã được chọn lọc và rút gọn cho người học — không phải bản đầy đủ của các nguồn.</p>
+    <p>Bộ thẻ này có ${Number(DATA.total || 0).toLocaleString("vi-VN")} từ (${esc(bits)}). ${Number(DATA.withImage || 0).toLocaleString("vi-VN")} từ có ảnh (${esc(imageBits)}). Nghĩa tiếng Việt lấy từ Wiktionary, mức A1–C2 của từ đã có trong CEFR-J hoặc Octanove được giữ nguyên, từ mới được xếp mức theo tần suất wordfreq so với trung vị của từng mức CEFR. Chủ đề dựa trên Open English WordNet. Câu ví dụ lấy từ Tatoeba khi có câu chứa từ. Ảnh là OpenMoji hoặc ảnh tự do trên Wikimedia Commons. Dữ liệu đã được chọn lọc và rút gọn — không phải bản đầy đủ của các nguồn.</p>
     <article class="source">
       <div class="badge">CC BY-SA 4.0 và GFDL</div>
       <h2>Wiktionary tiếng Việt</h2>
@@ -1003,7 +1551,36 @@ function renderCredits() {
       <p><a href="https://tatoeba.org/en/downloads" target="_blank" rel="noopener">tatoeba.org/downloads</a> ·
       <a href="https://creativecommons.org/licenses/by/2.0/fr/deed.vi" target="_blank" rel="noopener">CC BY 2.0 FR</a></p>
     </article>
-    <p class="note">Phần nghĩa, IPA và danh sách C1/C2 là tác phẩm phái sinh, giữ điều kiện chia sẻ tương tự của CC BY-SA 4.0. Câu Tatoeba giữ giấy phép CC BY 2.0 FR. Mức A1–B2 cần giữ lời trích CEFR-J. Mã nguồn ứng dụng tách riêng, xem LICENSE.</p>
+    <article class="source">
+      <div class="badge">CC BY-SA 4.0</div>
+      <h2>wordfreq</h2>
+      <p>Tần suất để xếp mức CEFR cho từ không có trong CEFR-J hay Octanove. Dữ liệu tần suất của Robyn Speer, giấy phép CC BY-SA 4.0. Nguồn gốc gồm Google Books Ngram (dùng tự do, nên ghi nhận), Wikipedia, ParaCrawl, Leeds Internet Corpus, OPUS OpenSubtitles 2018 (ghi nhận OpenSubtitles) và các bảng SUBTLEX của Marc Brysbaert và cộng sự (được phép dùng ngoài nghiên cứu nếu ghi tên).</p>
+      <p><a href="https://github.com/rspeer/wordfreq" target="_blank" rel="noopener">github.com/rspeer/wordfreq</a> ·
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a> ·
+      <a href="https://books.google.com/ngrams" target="_blank" rel="noopener">Google Books Ngram</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">CC BY 4.0</div>
+      <h2>Open English WordNet</h2>
+      <p>Phân loại chủ đề bằng quan hệ thượng vị (hypernym) của Open English WordNet 2024, dự án Global WordNet, kế thừa Princeton WordNet. Giấy phép Creative Commons Ghi công 4.0.</p>
+      <p><a href="https://github.com/globalwordnet/english-wordnet" target="_blank" rel="noopener">english-wordnet</a> ·
+      <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">CC BY-SA 4.0</div>
+      <h2>OpenMoji</h2>
+      <p>Minh họa trên một số thẻ. Phiên bản 17.0.0. Từng hình ghi tên người vẽ trên nút i của thẻ. Giấy phép Creative Commons Ghi công – Chia sẻ tương tự 4.0.</p>
+      <p><a href="https://openmoji.org/" target="_blank" rel="noopener">openmoji.org</a> ·
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">Từng ảnh một giấy phép</div>
+      <h2>Wikimedia Commons</h2>
+      <p>Ảnh danh từ lấy từ trang Wikipedia tiếng Anh khi trang có ảnh tự do, rồi đối chiếu giấy phép trên Wikimedia Commons. Chỉ giữ ảnh thuộc phạm vi công cộng, CC0, CC BY, CC BY-SA hoặc GFDL. Tên tác giả và giấy phép nằm ở nút i trên thẻ. Ảnh không được lưu trong repo; trình duyệt tải bản thu nhỏ khoảng 320px.</p>
+      <p><a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">commons.wikimedia.org</a> ·
+      <a href="https://www.wikidata.org/" target="_blank" rel="noopener">Wikidata</a></p>
+    </article>
+    <p class="note">Nghĩa, IPA, mức C1/C2 và dữ liệu wordfreq là tác phẩm phái sinh, giữ điều kiện chia sẻ tương tự của CC BY-SA 4.0 khi nguồn yêu cầu. Câu Tatoeba giữ CC BY 2.0 FR. Mức A1–B2 cần giữ lời trích CEFR-J. Emoji dự phòng là ký tự Unicode do app chọn, không lấy từ bộ tranh của ứng dụng khác. Mã nguồn ứng dụng tách riêng, xem LICENSE.</p>
   </section>`;
   topmeta.textContent = "Giấy phép và trích dẫn";
 }
@@ -1025,6 +1602,8 @@ function setNav() {
 
 function render() {
   if (!DATA) return;
+  stopAudio();
+  hideImageInfo();
   setNav();
   if (view === "study") renderStudy();
   else if (view === "decks") renderDecks();
@@ -1035,7 +1614,7 @@ function render() {
 }
 
 function grade(know) {
-  if (busy || view !== "study") return;
+  if (busy || view !== "study" || studyMode() !== "cards") return;
   const item = currentItem();
   if (!item) return;
   busy = true;
@@ -1047,6 +1626,7 @@ function grade(know) {
     STATE.xp = (STATE.xp || 0) + 1 + (know ? 2 : 0);
     freezeEarned = noteStudyDay();
     session.done += 1;
+    session.graded.add(item.id);
     if (!know) session.queue.push({ id: item.id, retry: true });
   }
   session.index += 1;
@@ -1136,13 +1716,18 @@ function bindSwipe() {
   });
 }
 
-function toggleLevel(id) {
+async function toggleLevel(id) {
   const selected = new Set(STATE.settings.levels);
   if (selected.has(id)) selected.delete(id);
   else selected.add(id);
   STATE.settings.levels = LEVELS.filter((level) => selected.has(level));
   save();
   session = null;
+  try {
+    if (selected.has(id)) await ensureLevels([id]);
+  } catch {
+    toast("Không tải được trình độ này");
+  }
   render();
 }
 
@@ -1171,11 +1756,20 @@ function resetProgress() {
   const own = STATE.own || [];
   const autoSpeak = STATE.settings.autoSpeak !== false;
   const ownDeck = STATE.settings.ownDeck !== false;
+  const theme = STATE.settings.theme || "paper";
+  const mode = studyMode();
+  const listenRate = STATE.settings.listenRate;
+  const listenRepeat = STATE.settings.listenRepeat;
   localStorage.removeItem(KEY);
   STATE = loadState();
   STATE.own = own;
   STATE.settings.autoSpeak = autoSpeak;
   STATE.settings.ownDeck = ownDeck;
+  STATE.settings.theme = theme;
+  STATE.settings.mode = mode;
+  STATE.settings.listenRate = listenRate;
+  STATE.settings.listenRepeat = listenRepeat;
+  applyTheme(theme);
   reindex();
   save();
   session = null;
@@ -1200,6 +1794,67 @@ document.addEventListener("click", (event) => {
     event.stopPropagation();
     const card = currentCard();
     if (card) speak(card.word);
+    return;
+  }
+  if (name === "img-info") {
+    event.preventDefault();
+    event.stopPropagation();
+    showImageInfo();
+    return;
+  }
+  if (name === "close-pop") {
+    hideImageInfo();
+    return;
+  }
+  if (name === "mode") {
+    const next = act.dataset.id;
+    if (!MODES.includes(next) || next === studyMode()) return;
+    STATE.settings.mode = next;
+    save();
+    view = "study";
+    render();
+    return;
+  }
+  if (name === "theme") {
+    applyTheme(act.dataset.id);
+    save();
+    render();
+    return;
+  }
+  if (name === "listen-toggle") {
+    if (listenRun.playing) pauseListen();
+    else startListen();
+    return;
+  }
+  if (name === "listen-next" || name === "listen-prev" || name === "listen-restart") {
+    pauseListen();
+    if (name === "listen-restart") session.listenIndex = 0;
+    else if (name === "listen-next") session.listenIndex += 1;
+    else session.listenIndex = Math.max(0, session.listenIndex - 1);
+    renderListen();
+    return;
+  }
+  if (name === "listen-rate" || name === "listen-repeat") {
+    const value = Number(act.dataset.value);
+    if (name === "listen-rate" && RATES.includes(value)) STATE.settings.listenRate = value;
+    if (name === "listen-repeat" && REPEATS.includes(value)) STATE.settings.listenRepeat = value;
+    save();
+    main.querySelectorAll(`[data-act="${name}"]`).forEach((button) => {
+      const on = Number(button.dataset.value) === value;
+      button.classList.toggle("on", on);
+    });
+    return;
+  }
+  if (name === "cloze-choice") {
+    const item = currentClozeItem();
+    answerCloze(item, act.dataset.word || "");
+    return;
+  }
+  if (name === "cloze-next") {
+    const item = currentClozeItem();
+    if (item && item.cloze) item.cloze.done = true;
+    session.clozeIndex += 1;
+    renderCloze();
     return;
   }
   if (name === "know" || name === "miss") {
@@ -1265,8 +1920,16 @@ document.addEventListener("submit", (event) => {
   saveOwn(form);
 });
 
+document.addEventListener("submit", (event) => {
+  const form = event.target;
+  if (!form || form.id !== "cloze-form") return;
+  event.preventDefault();
+  const item = currentClozeItem();
+  answerCloze(item, form.elements.answer.value);
+});
+
 document.addEventListener("keydown", (event) => {
-  if (view !== "study" || !DATA) return;
+  if (view !== "study" || !DATA || studyMode() !== "cards") return;
   if (event.key === "ArrowRight") { event.preventDefault(); grade(true); }
   else if (event.key === "ArrowLeft") { event.preventDefault(); grade(false); }
   else if (event.key === " " || event.key === "Enter") {
@@ -1279,21 +1942,48 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+async function ensureLevels(levels) {
+  const need = (levels || []).filter((level) => LEVELS.includes(level) && !loadedLevels.has(level));
+  if (!need.length) return;
+  const parts = await Promise.all(need.map(async (level) => {
+    const res = await fetch(`data/level-${level.toLowerCase()}.json`);
+    if (!res.ok) throw new Error(level);
+    return res.json();
+  }));
+  need.forEach((level, index) => {
+    DATA.cards.push(...((parts[index] && parts[index].cards) || []));
+    loadedLevels.add(level);
+  });
+  reindex();
+}
+
+function prefetchLevels() {
+  const rest = LEVELS.filter((level) => !loadedLevels.has(level));
+  if (!rest.length) return;
+  window.setTimeout(() => {
+    ensureLevels(rest).catch(() => {});
+  }, 700);
+}
+
 async function boot() {
+  applyTheme(localStorage.getItem(THEME_KEY) || "paper");
   main.innerHTML = `<section class="empty"><h1>Đang mở bộ thẻ…</h1><p>Một lát thôi.</p></section>`;
   topmeta.textContent = "";
   try {
-    const [vocabRes, iconRes] = await Promise.all([
-      fetch("data/vocab.json"),
+    const [metaRes, iconRes] = await Promise.all([
+      fetch("data/meta.json"),
       fetch("data/icons.json").catch(() => null),
     ]);
-    if (!vocabRes.ok) throw new Error("bad status");
-    DATA = await vocabRes.json();
+    if (!metaRes.ok) throw new Error("bad status");
+    DATA = await metaRes.json();
+    DATA.cards = [];
     ICONS = iconRes && iconRes.ok ? await iconRes.json() : {};
     STATE = loadState();
-    reindex();
+    applyTheme(STATE.settings.theme);
     const known = new Set((DATA.topics || []).map((topic) => topic.id));
-    STATE.settings.topics = STATE.settings.topics.filter((id) => known.has(id));
+    STATE.settings.topics = migrateTopics(STATE.settings.topics).filter((id) => known.has(id));
+    const initial = STATE.settings.levels.length ? STATE.settings.levels : ["B1", "B2"];
+    await ensureLevels(initial);
     const changed = reconcileFreezes();
     const fresh = checkMedals();
     if (changed || fresh.length) save();
@@ -1303,6 +1993,7 @@ async function boot() {
     }
     render();
     if (fresh.length) celebrate(fresh);
+    prefetchLevels();
   } catch {
     main.innerHTML = errorHtml();
     topmeta.textContent = "";
