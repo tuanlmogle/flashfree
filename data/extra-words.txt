@@ -1,0 +1,12 @@
+# Cách thêm từ
+# Mỗi dòng một từ. Dòng bắt đầu bằng # được bỏ qua.
+#
+# Chỉ từ:
+# waffle
+#
+# Từ, rồi nghĩa (tiếng Việt có dấu, hoặc một câu tiếng Anh ngắn):
+# kindness | lòng tốt
+# serendipity | A pleasant surprise you did not expect.
+#
+# Từ, nghĩa, và một câu ví dụ tiếng Anh:
+# kindness | lòng tốt | She showed kindness to a stranger.

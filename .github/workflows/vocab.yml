@@ -1,0 +1,57 @@
+name: Rebuild vocabulary
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - data/extra-words.txt
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: vocab-rebuild
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install builders
+        run: pip install wordfreq wn
+
+      - name: Download WordNet
+        run: python -c "import wn; wn.download('oewn:2024')"
+
+      - name: Rebuild data
+        run: python scripts/build_all.py
+
+      - name: Open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- data; then
+            echo "No data changes."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          branch="vocab-update-${GITHUB_RUN_ID}"
+          git checkout -b "$branch"
+          git add data/level-*.json data/meta.json data/emoji-index.json data/extra-words.txt
+          git commit -m "Update vocabulary data"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "Update vocabulary data" \
+            --body "Tự động tạo từ workflow Rebuild vocabulary. Xem diff rồi bấm Merge nếu ổn. Workflow không tự merge và không đẩy thẳng lên main."

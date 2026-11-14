@@ -88,6 +88,24 @@ App không nhúng bảng tần suất thô. Mỗi từ mới nhận một mức 
 
 ## 6. Open English WordNet 2024
 
+Phần chủ đề giữ như mục dưới. Thêm: câu giải nghĩa tiếng Anh ngắn cho từ không có gloss tiếng Việt cũng lấy từ định nghĩa synset của lexicon `oewn:2024` (**CC BY 4.0**). Câu được rút gọn (bỏ chú thích trong ngoặc, cắt khoảng 110 ký tự). Thẻ đó được đánh dấu `meaningLang: "en"`.
+
+## 6b. Bộ biểu tượng trên thẻ
+
+Máy không tải cả bộ ảnh vào repo. `data/emoji-index.json` chỉ ghi mã emoji và đường dẫn Fluent. Trình duyệt xin từng hình khi thẻ hiện ra.
+
+| Bộ | Dùng để | Bản ghim | Giấy phép |
+|---|---|---|---|
+| Microsoft Fluent Emoji | Sticker 3D | commit `1ffb34c752ecf5d402f04cfb4b392c77f57c54bc` | **MIT** — https://github.com/microsoft/fluentui-emoji/blob/main/LICENSE |
+| Twemoji | Emoji phẳng | tag `14.0.2` | **CC BY 4.0** cho hình (README kho twitter/twemoji). Mã nguồn kho ghi MIT. |
+| Google Noto Emoji | Emoji phẳng | tag `v2.047` | **SIL OFL 1.1** theo README của https://github.com/googlefonts/noto-emoji (đã đọc 14/11/2026). Không phải Apache. |
+| OpenMoji | Emoji màu, có tên người vẽ | `17.0.0` | **CC BY-SA 4.0** |
+| Wikimedia Commons | Ảnh thật của danh từ, đã chọn ở vòng trước | file và giấy phép nằm trên từng thẻ | Từng ảnh: PD, CC0, CC BY, CC BY-SA hoặc GFDL |
+
+Đã kiểm tra Fluent: file `LICENSE` ở gốc kho là MIT, và URL `.../Red apple/3D/red_apple_3d.png` trả về 200. Twemoji: README nói graphics licensed under CC-BY 4.0. Noto: README nói Open Font License 1.1.
+
+## 6c. Open English WordNet, mục phân loại
+
 | | |
 |---|---|
 | Dùng để | Gán chủ đề bằng synset và quan hệ thượng vị |

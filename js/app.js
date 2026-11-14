@@ -71,6 +71,11 @@ const LICENSE_NAME = {
   "gfdl-1.3": ["GFDL 1.3", "https://www.gnu.org/licenses/fdl-1.3.html"],
 };
 const OPENMOJI_SVG = "https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@17.0.0/color/svg/";
+const FLUENT_BASE = "https://cdn.jsdelivr.net/gh/microsoft/fluentui-emoji@1ffb34c752ecf5d402f04cfb4b392c77f57c54bc/assets/";
+const TWEMOJI_SVG = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/";
+const NOTO_SVG = "https://cdn.jsdelivr.net/gh/googlefonts/noto-emoji@v2.047/svg/emoji_u";
+const PIC_KEY = "latu-pic-v1";
+const PIC_STYLES = ["auto", "sticker", "flat", "photo"];
 const NEW_STEPS = [5, 10, 15, 20, 25, 30, 35, 40];
 const MEDALS = [
   { id: "streak-3", kind: "streak", n: 3, name: "Ba ngày", mark: "🌱" },
@@ -108,6 +113,8 @@ let toastOn = false;
 let lastAuto = { stamp: "", at: 0 };
 const loadedLevels = new Set();
 const listenRun = { token: 0, timer: 0, playing: false };
+let EMOJI_INDEX = {};
+let picPrefs = {};
 
 function esc(value) {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -141,7 +148,7 @@ function defaultState() {
   return {
     settings: {
       newPerDay: 10, levels: ["B1", "B2"], topics: [], autoSpeak: true, ownDeck: true,
-      theme: "paper", mode: "cards", listenRate: 1, listenRepeat: 1,
+      theme: "paper", mode: "cards", listenRate: 1, listenRepeat: 1, picStyle: "auto",
     },
     cards: {},
     introduced: {},
@@ -215,6 +222,7 @@ function loadState() {
     if (!MODES.includes(settings.mode)) settings.mode = "cards";
     if (!RATES.includes(Number(settings.listenRate))) settings.listenRate = 1;
     if (!REPEATS.includes(Number(settings.listenRepeat))) settings.listenRepeat = 1;
+    if (!PIC_STYLES.includes(settings.picStyle)) settings.picStyle = "auto";
     settings.topics = migrateTopics(settings.topics);
     const log = parsed.log && typeof parsed.log === "object" ? parsed.log : {};
     const knownMedals = new Set(MEDALS.map((medal) => medal.id));
@@ -395,20 +403,56 @@ function studyMode() {
   return MODES.includes(STATE.settings.mode) ? STATE.settings.mode : "cards";
 }
 
+function loadPicPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PIC_KEY) || "{}");
+    picPrefs = raw && typeof raw === "object" ? raw : {};
+  } catch {
+    picPrefs = {};
+  }
+}
+
+function savePicPrefs() {
+  try { localStorage.setItem(PIC_KEY, JSON.stringify(picPrefs)); } catch { /* ignore */ }
+}
+
+function picKey(pic) {
+  if (!pic) return "";
+  if (pic.s === "c") return `c:${pic.f}`;
+  return `${pic.s}:${String(pic.h || "").toLowerCase()}`;
+}
+
 function imageUrl(img) {
   if (!img) return "";
-  if (img.t === "o" && img.h) return `${OPENMOJI_SVG}${encodeURIComponent(img.h)}.svg`;
-  if (img.t === "c" && img.f) {
+  const kind = img.s || img.t;
+  if ((kind === "o") && img.h) return `${OPENMOJI_SVG}${encodeURIComponent(img.h)}.svg`;
+  if (kind === "c" && img.f) {
     return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(img.f)}?width=320`;
   }
+  if (kind === "f" && img.path) {
+    const parts = String(img.path).split("/").map((part) => encodeURIComponent(part)).join("/");
+    return `${FLUENT_BASE}${parts}`;
+  }
+  if (kind === "w" && img.h) return `${TWEMOJI_SVG}${String(img.h).toLowerCase()}.svg`;
+  if (kind === "n" && img.h) return `${NOTO_SVG}${String(img.h).toLowerCase().replace(/-/g, "_")}.svg`;
   return "";
 }
 
 function imageCredit(img) {
   if (!img) return "";
-  if (img.t === "o") {
+  const kind = img.s || img.t;
+  if (kind === "o") {
     const who = img.a ? `${esc(img.a)} · ` : "";
     return `${who}OpenMoji, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a> · <a href="https://openmoji.org/" target="_blank" rel="noopener">openmoji.org</a>`;
+  }
+  if (kind === "f") {
+    return `Microsoft Fluent Emoji, <a href="https://opensource.org/license/mit" target="_blank" rel="noopener">MIT</a> · <a href="https://github.com/microsoft/fluentui-emoji" target="_blank" rel="noopener">fluentui-emoji</a>`;
+  }
+  if (kind === "w") {
+    return `Twemoji, <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a> · <a href="https://github.com/twitter/twemoji" target="_blank" rel="noopener">twitter/twemoji</a>`;
+  }
+  if (kind === "n") {
+    return `Google Noto Emoji, <a href="https://scripts.sil.org/OFL" target="_blank" rel="noopener">SIL OFL 1.1</a> · <a href="https://github.com/googlefonts/noto-emoji" target="_blank" rel="noopener">noto-emoji</a>`;
   }
   const lic = LICENSE_NAME[img.l] || ["Giấy phép mở", "https://commons.wikimedia.org/"];
   const file = `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(img.f || "")}`;
@@ -416,15 +460,74 @@ function imageCredit(img) {
   return `${who} · <a href="${esc(lic[1])}" target="_blank" rel="noopener">${esc(lic[0])}</a> · <a href="${file}" target="_blank" rel="noopener">Wikimedia Commons</a>`;
 }
 
+function pictureChoices(card) {
+  const all = [];
+  const seen = new Set();
+  const push = (pic) => {
+    const key = picKey(pic);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    all.push(pic);
+  };
+  if (card.img && card.img.t === "c" && card.img.f) {
+    push({ s: "c", f: card.img.f, a: card.img.a || "", l: card.img.l || "" });
+  }
+  if (card.img && card.img.t === "o" && card.img.h) {
+    push({ s: "o", h: card.img.h, a: card.img.a || "" });
+  }
+  for (const hex of card.emo || []) {
+    const h = String(hex || "").toLowerCase();
+    if (!/^[0-9a-f-]+$/.test(h)) continue;
+    const info = EMOJI_INDEX[h] || {};
+    if (info.f) push({ s: "f", h, path: info.f });
+    push({ s: "w", h });
+    push({ s: "n", h });
+    if (info.oh) push({ s: "o", h: info.oh, a: info.oa || "" });
+  }
+  return all;
+}
+
+function orderedPics(card) {
+  const all = pictureChoices(card);
+  const style = STATE && STATE.settings ? STATE.settings.picStyle : "auto";
+  let list = all;
+  if (style === "sticker") list = all.filter((pic) => pic.s === "f");
+  else if (style === "flat") list = all.filter((pic) => pic.s === "w" || pic.s === "n" || pic.s === "o");
+  else if (style === "photo") list = all.filter((pic) => pic.s === "c");
+  if (!list.length) list = all;
+  const saved = picPrefs[card.id];
+  if (!saved) return list;
+  const index = list.findIndex((pic) => picKey(pic) === saved);
+  if (index <= 0) return list;
+  return list.slice(index).concat(list.slice(0, index));
+}
+
+function chosenPic(card) {
+  const list = orderedPics(card);
+  return { pic: list[0] || null, list };
+}
+
 function pictureHtml(card) {
-  const src = imageUrl(card.img);
+  const { pic, list } = chosenPic(card);
+  const src = imageUrl(pic);
   const icon = memoryIcon(card);
   if (!src) return icon ? `<p class="memo" aria-hidden="true">${esc(icon)}</p>` : "";
+  const swap = list.length > 1
+    ? `<button type="button" class="swap" data-act="pic-swap" aria-label="Đổi hình">↻</button>`
+    : "";
   return `<div class="picbox wait">
     <img class="pic" alt="" src="${esc(src)}" decoding="async">
     ${icon ? `<p class="memo" aria-hidden="true">${esc(icon)}</p>` : ""}
+    ${swap}
     <button type="button" class="info" data-act="img-info" aria-label="Nguồn ảnh">i</button>
   </div>`;
+}
+
+function meaningHtml(card) {
+  if (card.meaningLang === "en") {
+    return `<p class="en-label">Giải nghĩa tiếng Anh</p><p class="meaning">${esc(card.meaning)}</p>`;
+  }
+  return `<p class="meaning">${esc(card.meaning)}</p>`;
 }
 
 function bindPicture(root) {
@@ -445,7 +548,8 @@ function bindPicture(root) {
 
 function showImageInfo() {
   const card = currentCard();
-  if (!card || !card.img) return;
+  const pic = card ? chosenPic(card).pic : null;
+  if (!pic) return;
   let pop = document.getElementById("imgpop");
   if (!pop) {
     pop = document.createElement("div");
@@ -454,7 +558,7 @@ function showImageInfo() {
     document.getElementById("app").appendChild(pop);
   }
   pop.hidden = false;
-  pop.innerHTML = `<p>${imageCredit(card.img)}</p><button type="button" data-act="close-pop">Đóng</button>`;
+  pop.innerHTML = `<p>${imageCredit(pic)}</p><button type="button" data-act="close-pop">Đóng</button>`;
 }
 
 function hideImageInfo() {
@@ -755,6 +859,7 @@ function cardFaces(card, item) {
   const also = card.also && card.also.length ? `<p class="also">Cũng viết: ${esc(card.also.join(", "))}</p>` : "";
   const topic = (card.topics || [])[0];
   const topicPill = topic ? `<span class="pill">${esc(topicName(topic))}</span>` : "";
+  const enPill = card.meaningLang === "en" ? `<span class="pill en">EN</span>` : "";
   const meta = card.own ? (pos ? `Của tôi · ${pos}` : "Của tôi") : `${card.level} · ${pos}`;
   const memo = pictureHtml(card);
   let example = `<p class="hint">Chưa có câu ví dụ cho từ này.</p>`;
@@ -773,7 +878,7 @@ function cardFaces(card, item) {
   return `<div class="face front">
       <div class="stamps" aria-hidden="true"><span class="stamp miss">Chưa biết</span><span class="stamp know">Biết</span></div>
       ${speakerButton()}
-      <div class="pillrow"><span class="pill">${esc(meta)}</span>${topicPill}${retry}</div>
+      <div class="pillrow"><span class="pill">${esc(meta)}</span>${enPill}${topicPill}${retry}</div>
       <div class="wordwrap">
         ${memo}
         <h1 class="${wordClass(card.word)}">${esc(card.word)}</h1>
@@ -786,7 +891,7 @@ function cardFaces(card, item) {
       ${speakerButton()}
       <div class="pillrow"><span class="pill">${esc(meta)}</span>${retry}</div>
       <div class="wordwrap">
-        <p class="meaning">${esc(card.meaning)}</p>
+        ${meaningHtml(card)}
         ${example}
       </div>
     </div>`;
@@ -1032,6 +1137,7 @@ function renderCloze() {
     <div class="bar" aria-hidden="true"><span style="width:${session.total ? Math.min(100, Math.round((session.done / session.total) * 100)) : 0}%"></span></div>
     <article class="cloze-card">
       <div class="pillrow"><span class="pill">${esc(card.level)} · ${esc(POS_VI[card.pos] || card.pos || "từ")}</span></div>
+      ${card.meaningLang === "en" ? `<p class="en-label">Giải nghĩa tiếng Anh</p>` : ""}
       <p class="cloze-hint">${esc(card.meaning)}</p>
       <p class="cloze-sent">${esc(blank.before)}<span class="blank">${answered ? esc(blank.surface) : "_____"}</span>${esc(blank.after)}</p>
       <div class="choices">${choices}</div>
@@ -1135,6 +1241,7 @@ function renderListen() {
       <div class="pillrow"><span class="pill">${esc(card.level)} · ${session.listenIndex + 1}/${total}</span></div>
       <h1 class="${wordClass(card.word)} step-word">${esc(card.word)}</h1>
       ${card.ipa ? `<p class="ipa">/${esc(card.ipa)}/</p>` : ""}
+      ${card.meaningLang === "en" ? `<p class="en-label">Giải nghĩa tiếng Anh</p>` : ""}
       <p class="meaning step-vi">${esc(card.meaning)}</p>
       ${card.example ? `<p class="ex-en step-ex">${esc(card.example)}</p>` : `<p class="hint step-ex">Không có câu ví dụ.</p>`}
     </article>
@@ -1168,7 +1275,8 @@ async function playListenPass(token) {
   await speakPiece(card.word, "en-US", rate, token);
   if (!(await waitMs(650 / rate, token))) return false;
   markListenStep("vi");
-  if (hasViVoice()) await speakPiece(card.meaning, "vi-VN", rate, token);
+  if (card.meaningLang === "en") await speakPiece(card.meaning, "en-US", rate, token);
+  else if (hasViVoice()) await speakPiece(card.meaning, "vi-VN", rate, token);
   else if (!(await waitMs(1100, token))) return false;
   if (!(await waitMs(500 / rate, token))) return false;
   if (card.example) {
@@ -1420,6 +1528,17 @@ function renderDecks() {
     <h2 class="section-title">Cách học</h2>
     ${modeSwitch()}
     <p class="note">Thẻ lật như cũ. Nghe đọc từ, nghĩa và câu rồi sang thẻ sau. Điền chọn hoặc gõ từ còn thiếu trong câu ví dụ; đúng tính là Biết, sai tính là Chưa biết.</p>
+    <h2 class="section-title">Kiểu hình</h2>
+    <div class="styles">${[
+      ["auto", "Tự động"],
+      ["sticker", "Sticker 3D"],
+      ["flat", "Emoji phẳng"],
+      ["photo", "Ảnh thật"],
+    ].map(([id, label]) => {
+      const on = (settings.picStyle || "auto") === id;
+      return `<button type="button" data-act="pic-style" data-id="${id}" class="${on ? "on" : ""}" aria-pressed="${on}">${label}</button>`;
+    }).join("")}</div>
+    <p class="note">Tự động chọn ảnh thật nếu có, rồi sticker. Đổi hình trên thẻ được nhớ cho từng từ.</p>
     <h2 class="section-title">Màu</h2>
     <div class="themes">${Object.entries(THEMES).map(([id, theme]) => {
       const on = (settings.theme || "paper") === id;
@@ -1565,6 +1684,34 @@ function renderCredits() {
       <p>Phân loại chủ đề bằng quan hệ thượng vị (hypernym) của Open English WordNet 2024, dự án Global WordNet, kế thừa Princeton WordNet. Giấy phép Creative Commons Ghi công 4.0.</p>
       <p><a href="https://github.com/globalwordnet/english-wordnet" target="_blank" rel="noopener">english-wordnet</a> ·
       <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">CC BY 4.0</div>
+      <h2>Open English WordNet, phần giải nghĩa</h2>
+      <p>Từ không có nghĩa tiếng Việt vẫn được giữ, kèm một câu giải nghĩa tiếng Anh ngắn lấy từ định nghĩa synset của Open English WordNet. Thẻ đó có nhãn EN và dòng “Giải nghĩa tiếng Anh”.</p>
+      <p><a href="https://github.com/globalwordnet/english-wordnet" target="_blank" rel="noopener">english-wordnet</a> ·
+      <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">MIT</div>
+      <h2>Microsoft Fluent Emoji</h2>
+      <p>Sticker 3D. Bản commit 1ffb34c. Tải lúc xem thẻ từ jsDelivr, không lưu file ảnh trong repo.</p>
+      <p><a href="https://github.com/microsoft/fluentui-emoji" target="_blank" rel="noopener">fluentui-emoji</a> ·
+      <a href="https://opensource.org/license/mit" target="_blank" rel="noopener">MIT</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">CC BY 4.0</div>
+      <h2>Twemoji</h2>
+      <p>Emoji phẳng của Twitter, phiên bản 14.0.2. Hình thuộc CC BY 4.0.</p>
+      <p><a href="https://github.com/twitter/twemoji" target="_blank" rel="noopener">twitter/twemoji</a> ·
+      <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a></p>
+    </article>
+    <article class="source">
+      <div class="badge">SIL OFL 1.1</div>
+      <h2>Google Noto Emoji</h2>
+      <p>Emoji trong bộ Noto, thẻ svg v2.047. Giấy phép SIL Open Font License 1.1 (đã đối chiếu README của kho, không phải Apache).</p>
+      <p><a href="https://github.com/googlefonts/noto-emoji" target="_blank" rel="noopener">noto-emoji</a> ·
+      <a href="https://scripts.sil.org/OFL" target="_blank" rel="noopener">OFL 1.1</a></p>
     </article>
     <article class="source">
       <div class="badge">CC BY-SA 4.0</div>
@@ -1760,6 +1907,7 @@ function resetProgress() {
   const mode = studyMode();
   const listenRate = STATE.settings.listenRate;
   const listenRepeat = STATE.settings.listenRepeat;
+  const picStyle = STATE.settings.picStyle || "auto";
   localStorage.removeItem(KEY);
   STATE = loadState();
   STATE.own = own;
@@ -1769,6 +1917,7 @@ function resetProgress() {
   STATE.settings.mode = mode;
   STATE.settings.listenRate = listenRate;
   STATE.settings.listenRepeat = listenRepeat;
+  STATE.settings.picStyle = picStyle;
   applyTheme(theme);
   reindex();
   save();
@@ -1819,6 +1968,34 @@ document.addEventListener("click", (event) => {
     applyTheme(act.dataset.id);
     save();
     render();
+    return;
+  }
+  if (name === "pic-style") {
+    if (!PIC_STYLES.includes(act.dataset.id)) return;
+    STATE.settings.picStyle = act.dataset.id;
+    save();
+    render();
+    return;
+  }
+  if (name === "pic-swap") {
+    event.preventDefault();
+    event.stopPropagation();
+    const card = currentCard();
+    if (!card) return;
+    const list = orderedPics(card);
+    if (list.length < 2) return;
+    const current = picKey(list[0]);
+    const index = list.findIndex((pic) => picKey(pic) === current);
+    const next = list[(index + 1) % list.length];
+    picPrefs[card.id] = picKey(next);
+    savePicPrefs();
+    const root = document.getElementById("card") || document.getElementById("listen-card");
+    if (!root) return;
+    const html = pictureHtml(card);
+    const box = root.querySelector(".picbox") || root.querySelector(".memo");
+    if (box) box.outerHTML = html;
+    else root.insertAdjacentHTML("afterbegin", html);
+    bindPicture(root);
     return;
   }
   if (name === "listen-toggle") {
@@ -1970,14 +2147,17 @@ async function boot() {
   main.innerHTML = `<section class="empty"><h1>Đang mở bộ thẻ…</h1><p>Một lát thôi.</p></section>`;
   topmeta.textContent = "";
   try {
-    const [metaRes, iconRes] = await Promise.all([
+    loadPicPrefs();
+    const [metaRes, iconRes, emojiRes] = await Promise.all([
       fetch("data/meta.json"),
       fetch("data/icons.json").catch(() => null),
+      fetch("data/emoji-index.json").catch(() => null),
     ]);
     if (!metaRes.ok) throw new Error("bad status");
     DATA = await metaRes.json();
     DATA.cards = [];
     ICONS = iconRes && iconRes.ok ? await iconRes.json() : {};
+    EMOJI_INDEX = emojiRes && emojiRes.ok ? await emojiRes.json() : {};
     STATE = loadState();
     applyTheme(STATE.settings.theme);
     const known = new Set((DATA.topics || []).map((topic) => topic.id));
