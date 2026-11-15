@@ -580,6 +580,7 @@ main {
   font-size: 1.6rem;
   flex: none;
 }
+.quota { text-align: center; color: var(--muted); font-size: 0.86rem; margin: 4px 0 8px; }
 .calnav {
   display: flex;
   align-items: center;

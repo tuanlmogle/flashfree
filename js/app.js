@@ -2,7 +2,10 @@
    A failed card is shown once more in the same session; the stored grade stays the first answer. */
 
 import { accountEnabled, bindAccount, currentUser, scheduleSync, signInGoogle, signOutGoogle } from "./account.js";
-import { STREAK_MIN, calendarKind, earliestStudyDay, medalValues, shareLink, streakFromLog } from "./progress.js";
+import {
+  STREAK_MIN,   EXTRA_STEP, NEW_LIMITS, calendarKind, earliestStudyDay, extraToday,
+  medalValues, newCap, normalizeNewPerDay, shareLink, slotsLeft, streakFromLog, unlockTarget,
+} from "./progress.js";
 
 const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const LEVEL_NAME = {
@@ -79,7 +82,7 @@ const TWEMOJI_SVG = "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/s
 const NOTO_SVG = "https://cdn.jsdelivr.net/gh/googlefonts/noto-emoji@v2.047/svg/emoji_u";
 const PIC_KEY = "latu-pic-v1";
 const PIC_STYLES = ["auto", "sticker", "flat", "photo"];
-const NEW_STEPS = [5, 10, 15, 20, 25, 30, 35, 40];
+const NEW_STEPS = NEW_LIMITS;
 const MEDALS = [
   { id: "streak-3", kind: "streak", n: 3, name: "Ba ngày", mark: "🌱" },
   { id: "streak-7", kind: "streak", n: 7, name: "Một tuần", mark: "🍀" },
@@ -166,7 +169,7 @@ function hash(text) {
 function defaultState() {
   return {
     settings: {
-      newPerDay: 10, levels: ["B1", "B2"], topics: [], autoSpeak: true, ownDeck: true,
+      newPerDay: 15, levels: ["B1", "B2"], topics: [], autoSpeak: true, ownDeck: true,
       theme: "paper", mode: "cards", listenRate: 1, listenRepeat: 1, picStyle: "auto",
     },
     cards: {},
@@ -180,6 +183,7 @@ function defaultState() {
     invites: 0,
     localId: "",
     firstStudy: "",
+    extraNew: { day: "", n: 0 },
     updatedAt: 0,
   };
 }
@@ -241,7 +245,7 @@ function loadState() {
     const settings = { ...base.settings, ...(parsed.settings || {}) };
     settings.levels = (settings.levels || []).filter((level) => LEVELS.includes(level));
     settings.topics = Array.isArray(settings.topics) ? settings.topics : [];
-    if (!NEW_STEPS.includes(Number(settings.newPerDay))) settings.newPerDay = 10;
+    settings.newPerDay = normalizeNewPerDay(settings.newPerDay);
     settings.autoSpeak = settings.autoSpeak !== false;
     settings.ownDeck = settings.ownDeck !== false;
     if (!THEMES[settings.theme]) settings.theme = "paper";
@@ -265,6 +269,9 @@ function loadState() {
       invites: Math.max(0, Number(parsed.invites) || 0),
       localId: typeof parsed.localId === "string" && parsed.localId ? parsed.localId : makeLocalId(),
       firstStudy: /^\d{4}-\d{2}-\d{2}$/.test(parsed.firstStudy || "") ? parsed.firstStudy : "",
+      extraNew: parsed.extraNew && typeof parsed.extraNew === "object"
+        ? { day: String(parsed.extraNew.day || ""), n: Math.max(0, Number(parsed.extraNew.n) || 0) }
+        : { day: "", n: 0 },
       updatedAt: Math.max(0, Number(parsed.updatedAt) || 0),
     });
   } catch {
@@ -658,7 +665,68 @@ function sessionKey() {
   const settings = STATE.settings;
   const topics = settings.topics.length ? settings.topics.slice().sort().join(",") : "*";
   const own = settings.ownDeck === false ? "off" : (STATE.own || []).map((item) => item.id).join(",");
-  return `${todayISO()}|${settings.newPerDay}|${settings.levels.join(",")}|${topics}|${own}`;
+  const bonus = extraToday(STATE.extraNew, todayISO());
+  return `${todayISO()}|${settings.newPerDay}|${bonus}|${settings.levels.join(",")}|${topics}|${own}`;
+}
+
+function todayNewCap() {
+  return newCap(STATE.settings.newPerDay, extraToday(STATE.extraNew, todayISO()));
+}
+
+function newAnsweredToday() {
+  const today = todayISO();
+  return (STATE.introduced[today] || []).filter((id) => {
+    if (String(id).startsWith("own-")) return false;
+    const state = STATE.cards[id];
+    return state && state.last === today;
+  }).length;
+}
+
+function quotaText() {
+  return `Từ mới hôm nay: ${newAnsweredToday()}/${todayNewCap()}`;
+}
+
+function topicMatch(card) {
+  const topics = STATE.settings.topics;
+  if (!topics.length) return true;
+  return (card.topics || []).some((id) => topics.includes(id));
+}
+
+function levelStats(level) {
+  let total = 0;
+  let seen = 0;
+  for (const card of DATA.cards) {
+    if (!card || card.own || card.level !== level || !topicMatch(card)) continue;
+    total += 1;
+    if (STATE.cards[card.id]) seen += 1;
+  }
+  if (!STATE.settings.topics.length) {
+    const full = Number((DATA.counts && DATA.counts[level]) || 0);
+    if (full > total) total = full;
+  }
+  return { seen, total };
+}
+
+function unlockOffer() {
+  const stats = {};
+  for (const level of LEVELS) stats[level] = levelStats(level);
+  return unlockTarget(STATE.settings.levels, stats);
+}
+
+function unlockHtml() {
+  const offer = unlockOffer();
+  if (!offer) return "";
+  const pct = Math.round((offer.seen / offer.total) * 100);
+  return `<button type="button" class="primary" data-act="unlock-level" data-id="${offer.next}">Mở ${offer.next}</button>
+    <p class="note">Bạn đã gặp ${pct}% từ ${offer.current} trong bộ đang chọn. Bấm để thêm ${offer.next}. Bộ hiện tại vẫn giữ.</p>`;
+}
+
+function moreUnseen() {
+  for (const card of pool()) {
+    if (!card || card.own || !inDeck(card) || STATE.cards[card.id]) continue;
+    return true;
+  }
+  return false;
 }
 
 function planToday(today) {
@@ -691,7 +759,7 @@ function planToday(today) {
   const keptSet = new Set(kept);
   const keptOwn = kept.filter((id) => String(id).startsWith("own-"));
   const keptBuilt = kept.filter((id) => !String(id).startsWith("own-"));
-  let room = Math.max(0, STATE.settings.newPerDay - keptBuilt.length);
+  let room = slotsLeft(keptBuilt.length, todayNewCap());
   const addedOwn = [];
   const addedBuilt = [];
   for (const card of unseen) {
@@ -980,6 +1048,8 @@ function updateStudyChrome() {
   if (bar) bar.style.width = `${pct}%`;
   const levels = STATE.settings.levels.join(" · ") || "Chưa chọn";
   topmeta.textContent = remain > 0 ? `${levels} · còn ${remain}` : levels;
+  const quota = document.querySelector("[data-quota]");
+  if (quota) quota.textContent = quotaText();
 }
 
 function fillCard() {
@@ -999,6 +1069,7 @@ function studyShell() {
     ${modeSwitch()}
     <div class="bar" aria-hidden="true"><span></span></div>
     <div class="stage"><div class="tilt" id="tilt"><article class="card" id="card"></article></div></div>
+    <p class="quota" data-quota>${esc(quotaText())}</p>
     <p class="gesture">Vuốt phải: biết · vuốt trái: chưa biết</p>
     <div class="actions">
       <button type="button" class="missbtn" data-act="miss">Chưa biết</button>
@@ -1021,12 +1092,18 @@ function doneHtml() {
     </section>`;
   }
   const numbers = totals();
+  const used = newAnsweredToday();
+  const cap = todayNewCap();
+  const extra = moreUnseen() && used >= cap;
   return `<section class="empty">
-    <h1>Hết phần hôm nay</h1>
-    <p>Bạn đã ôn ${numbers.todayRow.reviews} lượt. Từ chưa biết sẽ trở lại vào ngày mai. Muốn học thêm, hãy tăng số thẻ mới.</p>
-    <button type="button" class="primary" data-act="goto" data-goto="decks">Đổi bộ thẻ hoặc thêm thẻ mới</button>
-    <p style="height:8px"></p>
-    <button type="button" class="ghost" data-act="goto" data-goto="stats">Xem thống kê</button>
+    <h1>${extra ? "Hết từ mới hôm nay" : "Hết phần hôm nay"}</h1>
+    <p class="quota">${esc(quotaText())}</p>
+    <p>${extra
+      ? `Bạn đã gặp đủ ${cap} từ mới. Thẻ đến hạn vẫn ôn không giới hạn. Mai sẽ có thêm ${STATE.settings.newPerDay} từ.`
+      : `Bạn đã ôn ${numbers.todayRow.reviews} lượt. Từ chưa biết sẽ trở lại vào ngày đến hạn.`}</p>
+    ${extra ? `<button type="button" class="primary" data-act="extra-new">+${EXTRA_STEP} từ mới</button>` : ""}
+    ${unlockHtml()}
+    <button type="button" class="ghost" data-act="goto" data-goto="decks">Đổi bộ thẻ</button>
   </section>`;
 }
 
@@ -1611,6 +1688,8 @@ function renderDecks() {
       <strong>${settings.newPerDay} thẻ mới</strong>
       <button type="button" data-act="new-inc" aria-label="Tăng số thẻ mới">+</button>
     </div>
+    <p class="note">Mỗi ngày chỉ gặp tối đa số này từ chưa học. Thẻ đến hạn ôn không giới hạn. ${esc(quotaText())}</p>
+    ${unlockHtml()}
     <h2 class="section-title">Cách học</h2>
     ${modeSwitch()}
     <p class="note">Thẻ lật như cũ. Nghe đọc từ, nghĩa và câu rồi sang thẻ sau. Điền chọn hoặc gõ từ còn thiếu trong câu ví dụ; đúng tính là Biết, sai tính là Chưa biết.</p>
@@ -2599,6 +2678,24 @@ document.addEventListener("click", (event) => {
     shiftProfileMonth(1);
     return;
   }
+  if (name === "extra-new") {
+    const today = todayISO();
+    STATE.extraNew = { day: today, n: extraToday(STATE.extraNew, today) + EXTRA_STEP };
+    session = null;
+    save();
+    view = "study";
+    render();
+    return;
+  }
+  if (name === "unlock-level") {
+    const id = act.dataset.id;
+    if (!LEVELS.includes(id) || STATE.settings.levels.includes(id)) return;
+    STATE.settings.levels = LEVELS.filter((level) => STATE.settings.levels.includes(level) || level === id);
+    session = null;
+    save();
+    ensureLevels([id]).then(() => render()).catch(() => render());
+    return;
+  }
   if (name === "sign-in") {
     signInGoogle().then((result) => {
       if (result && result.ok) return;
@@ -2773,6 +2870,7 @@ async function boot() {
           invites: STATE.invites || 0,
           localId: STATE.localId,
           firstStudy: STATE.firstStudy || "",
+          extraNew: STATE.extraNew || { day: "", n: 0 },
           picPrefs,
           updatedAt: STATE.updatedAt || 0,
         };
@@ -2782,6 +2880,7 @@ async function boot() {
         const settings = { ...STATE.settings, ...(next.settings || {}) };
         settings.levels = (settings.levels || []).filter((level) => LEVELS.includes(level));
         if (!THEMES[settings.theme]) settings.theme = "paper";
+        settings.newPerDay = normalizeNewPerDay(settings.newPerDay);
         STATE.settings = settings;
         STATE.cards = next.cards || {};
         STATE.introduced = next.introduced || {};
@@ -2794,6 +2893,9 @@ async function boot() {
         STATE.invites = next.invites || 0;
         STATE.localId = next.localId || STATE.localId;
         STATE.firstStudy = next.firstStudy || STATE.firstStudy || "";
+        STATE.extraNew = next.extraNew && next.extraNew.day
+          ? { day: String(next.extraNew.day), n: Math.max(0, Number(next.extraNew.n) || 0) }
+          : (STATE.extraNew || { day: "", n: 0 });
         picPrefs = next.picPrefs || {};
         savePicPrefs();
         applyStreakFromLog(STATE);

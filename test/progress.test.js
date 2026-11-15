@@ -6,6 +6,12 @@ import {
   STREAK_MIN,
   calendarKind,
   earliestStudyDay,
+  extraToday,
+  mergeExtra,
+  newCap,
+  normalizeNewPerDay,
+  slotsLeft,
+  unlockTarget,
   chunkMap,
   masteredCount,
   medalValues,
@@ -23,6 +29,27 @@ test("the shipped web config turns sign-in on and skips analytics", () => {
   assert.equal(firebaseConfig.projectId, "flashfree-9971e");
   assert.equal(firebaseConfig.authDomain, "flashfree-9971e.firebaseapp.com");
   assert.equal(Object.prototype.hasOwnProperty.call(firebaseConfig, "measurementId"), false);
+});
+
+test("daily new cards stop at the cap and extras add five", () => {
+  assert.equal(normalizeNewPerDay(undefined), 15);
+  assert.equal(normalizeNewPerDay(15), 15);
+  assert.equal(normalizeNewPerDay(25), 30);
+  assert.equal(normalizeNewPerDay(40), 50);
+  assert.equal(slotsLeft(7, newCap(15, 0)), 8);
+  assert.equal(slotsLeft(15, newCap(15, 0)), 0);
+  assert.equal(slotsLeft(15, newCap(15, extraToday({ day: "2026-11-15", n: 5 }, "2026-11-15"))), 5);
+  assert.equal(extraToday({ day: "2026-11-14", n: 5 }, "2026-11-15"), 0);
+  assert.deepEqual(mergeExtra({ day: "2026-11-15", n: 5 }, { day: "2026-11-15", n: 10 }, "2026-11-15"), { day: "2026-11-15", n: 10 });
+});
+
+test("the next level is offered at 80 percent and not before", () => {
+  const stats = { B2: { seen: 79, total: 100 }, C1: { seen: 0, total: 100 } };
+  assert.equal(unlockTarget(["B1", "B2"], stats), null);
+  stats.B2.seen = 80;
+  assert.deepEqual(unlockTarget(["B1", "B2"], stats), { current: "B2", next: "C1", seen: 80, total: 100 });
+  assert.equal(unlockTarget(["B1", "B2", "C1"], stats), null);
+  assert.equal(unlockTarget(["C2"], { C2: { seen: 100, total: 100 } }), null);
 });
 
 test("an empty Firebase config stays guest-only", () => {

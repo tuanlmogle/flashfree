@@ -59,7 +59,7 @@ Không cần biết lập trình. Bạn thêm từ bằng một file chữ trên
    - Từ, nghĩa, và câu ví dụ tiếng Anh: `kindness | lòng tốt | She showed kindness.`
    - Nếu không có nghĩa tiếng Việt, viết một câu tiếng Anh ngắn: `serendipity | A pleasant surprise.`
 4. Bấm **Commit changes**. Có thể ghi thẳng vào nhánh `main`.
-5. Vào tab **Actions**, chọn workflow **Rebuild vocabulary**. Nếu bạn vừa commit file trên, workflow thường tự chạy. Nếu không, bấm **Run workflow**, chọn nhánh `main`, rồi **Run workflow**.
+5. Vào tab **Actions**, chọn workflow **Rebuild vocabulary**, bấm **Run workflow**, chọn nhánh `main`, rồi **Run workflow**. Workflow không tự chạy theo lịch và không tự chạy khi file được sửa.
 6. Vài phút sau sẽ có một pull request tên **Update vocabulary data**. Mở PR, xem cho chắc, rồi bấm **Merge**. Workflow không tự merge và không sửa thẳng `main` ngoài file bạn đã commit.
 7. Sau khi merge, trang web cập nhật theo lần đẩy GitHub Pages.
 

@@ -2,6 +2,59 @@
    No DOM and no Firebase, so node can test this file directly. */
 
 export const STREAK_MIN = 20;
+export const LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+export const NEW_LIMITS = [5, 10, 15, 20, 30, 50];
+export const DEFAULT_NEW = 15;
+export const EXTRA_STEP = 5;
+export const LEVEL_UNLOCK = 0.8;
+
+export function normalizeNewPerDay(value) {
+  const n = Number(value);
+  if (NEW_LIMITS.includes(n)) return n;
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_NEW;
+  let best = DEFAULT_NEW;
+  let dist = Infinity;
+  for (const option of NEW_LIMITS) {
+    const gap = Math.abs(option - n);
+    if (gap < dist || (gap === dist && option > best)) {
+      dist = gap;
+      best = option;
+    }
+  }
+  return best;
+}
+
+export function extraToday(extra, today) {
+  if (!extra || extra.day !== today) return 0;
+  const n = Number(extra.n) || 0;
+  return n > 0 ? n : 0;
+}
+
+export function newCap(limit, extraCount) {
+  return normalizeNewPerDay(limit) + Math.max(0, Number(extraCount) || 0);
+}
+
+export function slotsLeft(introduced, cap) {
+  return Math.max(0, cap - Math.max(0, Number(introduced) || 0));
+}
+
+export function mergeExtra(left, right, today) {
+  return { day: today || "", n: Math.max(extraToday(left, today), extraToday(right, today)) };
+}
+
+/** Highest selected level at 80% seen unlocks the next one. No auto-switch. */
+export function unlockTarget(levels, stats) {
+  const selected = LEVELS.filter((level) => (levels || []).includes(level));
+  const current = selected[selected.length - 1];
+  if (!current) return null;
+  const next = LEVELS[LEVELS.indexOf(current) + 1];
+  if (!next || (levels || []).includes(next)) return null;
+  const row = (stats && stats[current]) || { seen: 0, total: 0 };
+  const total = Number(row.total) || 0;
+  const seen = Number(row.seen) || 0;
+  if (total < 1 || seen / total < LEVEL_UNLOCK) return null;
+  return { current, next, seen, total };
+}
 export const SITE_ORIGIN = "https://tuanlmogle.github.io/flashfree/";
 
 export function addDays(iso, amount) {
@@ -251,6 +304,7 @@ export function mergeStates(local, cloud, today) {
     invites: Math.max(left.invites || 0, right.invites || 0),
     localId: left.localId || right.localId || "",
     firstStudy: [left.firstStudy, right.firstStudy, earliestStudyDay(log)].filter(Boolean).sort()[0] || "",
+    extraNew: mergeExtra(left.extraNew, right.extraNew, today),
     picPrefs: mergePrefs(left.picPrefs, right.picPrefs, localWins),
     updatedAt: Date.now(),
   };
