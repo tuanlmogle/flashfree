@@ -1,6 +1,6 @@
 # Bật đăng nhập Google cho FlashFree
 
-Làm một lần, trên máy tính. App vẫn chạy được khi chưa làm các bước này: nút hồ sơ hiện **Chưa bật đăng nhập**, và mọi tiến độ nằm trên máy như trước.
+File `js/firebase-config.js` trong repo đã có cấu hình Web của dự án `flashfree-9971e` (không gồm Analytics). Phần còn lại làm trên máy tính: bật nhà cung cấp Google, thêm tên miền, và dán luật Firestore. Nếu script Firebase không tải được, app vẫn học như khách.
 
 Chỉ dùng gói **Spark** (miễn phí) của Firebase. Không bật dịch vụ trả phí. Không dùng đăng nhập Apple.
 

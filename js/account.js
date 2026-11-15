@@ -14,6 +14,7 @@ let auth = null;
 let timer = 0;
 let pushing = false;
 let ready = false;
+let booting = null;
 
 export function accountEnabled() {
   return firebaseReady();
@@ -28,17 +29,39 @@ export function bindAccount(next) {
   if (!firebaseReady()) return Promise.resolve(false);
   return boot().catch((error) => {
     console.error(error);
+    ready = false;
     return false;
   });
 }
 
+function prefersRedirect() {
+  const ua = navigator.userAgent || "";
+  if (/Android|iPhone|iPad|iPod/i.test(ua)) return true;
+  const narrow = window.matchMedia("(max-width: 768px)").matches;
+  const coarse = window.matchMedia("(pointer: coarse)").matches;
+  return narrow && coarse;
+}
+
 async function boot() {
-  const [{ initializeApp }, authMod, firestoreMod] = await Promise.all([
+  if (ready) return true;
+  if (booting) return booting;
+  booting = bootOnce().then(() => {
+    ready = true;
+    return true;
+  }).catch((error) => {
+    booting = null;
+    throw error;
+  });
+  return booting;
+}
+
+async function bootOnce() {
+  const [{ initializeApp, getApps }, authMod, firestoreMod] = await Promise.all([
     import(`${CDN}/firebase-app.js`),
     import(`${CDN}/firebase-auth.js`),
     import(`${CDN}/firebase-firestore.js`),
   ]);
-  const app = initializeApp(firebaseConfig);
+  const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
   auth = authMod.getAuth(app);
   try {
     db = firestoreMod.initializeFirestore(app, {
@@ -49,12 +72,16 @@ async function boot() {
   } catch {
     db = firestoreMod.getFirestore(app);
   }
-  ready = true;
   authMod.onAuthStateChanged(auth, (next) => {
     user = next || null;
     if (hooks && hooks.onUser) hooks.onUser(publicUser());
     if (user) syncDown().catch((error) => console.error(error));
   });
+  try {
+    await authMod.getRedirectResult(auth);
+  } catch (error) {
+    console.error(error);
+  }
   return true;
 }
 
@@ -70,15 +97,39 @@ export function publicUser() {
 
 export async function signInGoogle() {
   if (!firebaseReady()) return { ok: false, reason: "disabled" };
-  if (!ready) await boot();
+  try {
+    if (!ready) await boot();
+  } catch {
+    return { ok: false, reason: "load" };
+  }
+  if (!auth) return { ok: false, reason: "load" };
   const authMod = await import(`${CDN}/firebase-auth.js`);
   const provider = new authMod.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
+  const redirect = async () => {
+    await authMod.signInWithRedirect(auth, provider);
+    return { ok: true, redirect: true };
+  };
+  if (prefersRedirect()) {
+    try {
+      return await redirect();
+    } catch (error) {
+      return { ok: false, reason: error && error.code ? error.code : "redirect" };
+    }
+  }
   try {
     await authMod.signInWithPopup(auth, provider);
     return { ok: true };
   } catch (error) {
-    return { ok: false, reason: error && error.code ? error.code : "popup" };
+    const code = error && error.code ? error.code : "";
+    if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
+      try {
+        return await redirect();
+      } catch (redirectError) {
+        return { ok: false, reason: redirectError && redirectError.code ? redirectError.code : "redirect" };
+      }
+    }
+    return { ok: false, reason: code || "popup" };
   }
 }
 

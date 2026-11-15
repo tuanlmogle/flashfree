@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { firebaseReady } from "../js/firebase-config.js";
+import { firebaseConfig, firebaseReady } from "../js/firebase-config.js";
 import {
   STREAK_MIN,
   calendarKind,
@@ -17,6 +17,13 @@ import {
   streakFromLog,
   unchunkMap,
 } from "../js/progress.js";
+
+test("the shipped web config turns sign-in on and skips analytics", () => {
+  assert.equal(firebaseReady(), true);
+  assert.equal(firebaseConfig.projectId, "flashfree-9971e");
+  assert.equal(firebaseConfig.authDomain, "flashfree-9971e.firebaseapp.com");
+  assert.equal(Object.prototype.hasOwnProperty.call(firebaseConfig, "measurementId"), false);
+});
 
 test("an empty Firebase config stays guest-only", () => {
   assert.equal(firebaseReady({ apiKey: "", authDomain: "", projectId: "", appId: "" }), false);

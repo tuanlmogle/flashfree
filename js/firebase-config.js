@@ -1,15 +1,15 @@
-/* Paste the Web app config from the Firebase console.
-   Leave the strings empty and the app stays a guest-only flashcard deck.
-   Do not put a secret here. The Firebase web config is public by design,
-   and security is the job of firestore.rules. */
+/* Web app config for Firebase project flashfree-9971e.
+   This config is public by design. Access control is firestore.rules,
+   plus the authorized domains in the Firebase console.
+   Analytics is intentionally omitted: the app does not load that SDK. */
 
 export const firebaseConfig = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: "",
+  apiKey: "AIzaSyAjksyHRERszUj8mM4BfxkphuPPnHtJnVs",
+  authDomain: "flashfree-9971e.firebaseapp.com",
+  projectId: "flashfree-9971e",
+  storageBucket: "flashfree-9971e.firebasestorage.app",
+  messagingSenderId: "255505095210",
+  appId: "1:255505095210:web:84aaaaa3a0304528644153",
 };
 
 export function firebaseReady(config = firebaseConfig) {

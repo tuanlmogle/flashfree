@@ -2603,8 +2603,12 @@ document.addEventListener("click", (event) => {
     signInGoogle().then((result) => {
       if (result && result.ok) return;
       if (result && result.reason === "disabled") toast("Chưa bật đăng nhập");
-      else if (result && result.reason !== "auth/popup-closed-by-user") toast("Không đăng nhập được");
-    });
+      else if (result && result.reason === "load") toast("Không tải được đăng nhập. Bạn vẫn học được như khách.");
+      else if (result && result.reason === "auth/unauthorized-domain") toast("Tên miền này chưa được phép đăng nhập");
+      else if (result && result.reason !== "auth/popup-closed-by-user" && result && result.reason !== "auth/cancelled-popup-request") {
+        toast("Không đăng nhập được");
+      }
+    }).catch(() => toast("Không đăng nhập được. Bạn vẫn học được như khách."));
     return;
   }
   if (name === "logout") {
