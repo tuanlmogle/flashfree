@@ -120,6 +120,20 @@ Các file `data/fields/*.json` chỉ tải khi người học mở chủ đề �
 
 Mức chính thức của CEFR-J và Octanove được giữ. Từ chuyên ngành không có mức chính thức dùng cùng các ngưỡng Zipf trong `scripts/build_vocab.py` (C1 từ 2.70).
 
+## 6e. Cụm động từ, thành ngữ, và cụm từ hay đi chung
+
+Hai chủ đề, tải khi người học mở chúng (`data/fields/deck-phrasal.json` và `data/fields/deck-collocation.json`). Id thẻ cũ không đổi.
+
+| Nguồn | Dùng để | Giấy phép |
+|---|---|---|
+| Wiktionary tiếng Anh, bản trích kaikki.org (wiktextract) | Cụm động từ và thành ngữ, kể cả nhãn phrasal / idiomatic, và bản dịch tiếng Việt nếu mục có | **CC BY-SA 4.0** và GFDL. Bỏ mục ghi British-only, archaic, obsolete, rare, hoặc dated. |
+| Wiktionary tiếng Việt (kaikki) | Nghĩa tiếng Việt khi có | **CC BY-SA 4.0** và GFDL |
+| Open English WordNet 2024 | Câu giải nghĩa tiếng Anh khi không có tiếng Việt | **CC BY 4.0** |
+| Tatoeba câu tiếng Anh–Việt | Câu ví dụ, và đếm cặp động từ+danh từ / tính từ+danh từ hay đi chung | **CC BY 2.0 FR** |
+| wordfreq (Robyn Speer) | Giữ cụm dùng thường và xếp mức CEFR gần đúng | **CC BY-SA 4.0** |
+
+Cụm động từ và thành ngữ nằm chung một chủ đề, **Cụm động từ & thành ngữ**. Cụm từ hay đi chung là chủ đề thứ hai. Không dùng danh sách Oxford, Cambridge, hay sách thành ngữ có bản quyền.
+
 ## 6c. Open English WordNet, mục phân loại
 
 | | |

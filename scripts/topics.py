@@ -69,7 +69,8 @@ TOPIC_NAMES = {
     "social": "Quan hệ",
     "daily": "Đời sống hằng ngày",
     "holidays": "Ngày lễ",
-    "phrasal": "Cụm động từ",
+    "phrasal": "Cụm động từ & thành ngữ",
+    "collocation": "Cụm từ hay đi chung",
     "adjectives": "Tính từ thường gặp",
 }
 

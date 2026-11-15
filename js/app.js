@@ -1203,7 +1203,12 @@ function currentClozeItem() {
 }
 
 function clozeOptions(card, surface) {
-  const pool = DATA.cards.filter((item) => item.id !== card.id && item.pos === card.pos && item.word && item.word.length < 24);
+  const multi = String(card.word || "").includes(" ");
+  const pool = DATA.cards.filter((item) => {
+    if (item.id === card.id || !item.word) return false;
+    if (multi) return item.word.includes(" ") && item.word.length <= 48;
+    return item.pos === card.pos && item.word.length < 24;
+  });
   const same = pool.filter((item) => item.level === card.level);
   const source = same.length >= 8 ? same : pool;
   const rand = mulberry32(hash(`${card.id}:${surface}`));
