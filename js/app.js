@@ -118,8 +118,10 @@ let returnView = "decks";
 let editingId = "";
 let session = null;
 let busy = false;
-let drag = null;
 let suppressClick = false;
+let cardDragging = false;
+let horizontalDrag = false;
+let rebuildStudy = false;
 let toastTimer = 0;
 const toastQueue = [];
 let toastOn = false;
@@ -2300,6 +2302,8 @@ function render() {
   else if (view === "profile") renderProfile();
   else renderCredits();
   main.scrollTop = 0;
+  const cardStudy = view === "study" && studyMode() === "cards" && !!currentItem();
+  document.documentElement.classList.toggle("is-card-study", cardStudy);
   paintAvatar();
 }
 
@@ -2350,60 +2354,137 @@ function flip() {
 function bindSwipe() {
   const tilt = document.getElementById("tilt");
   if (!tilt) return;
-  const stamps = () => {
-    const miss = tilt.querySelector(".stamp.miss");
-    const know = tilt.querySelector(".stamp.know");
-    return { miss, know };
-  };
-  tilt.addEventListener("pointerdown", (event) => {
-    if (event.button) return;
-    if (event.target.closest("button, a")) return;
-    drag = { pid: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, moved: false };
-    tilt.setPointerCapture(event.pointerId);
+  const TAP = 10;
+  const FLICK = 0.55;
+  let active = null;
+
+  const stamps = () => ({
+    miss: tilt.querySelector(".stamp.miss"),
+    know: tilt.querySelector(".stamp.know"),
   });
-  tilt.addEventListener("pointermove", (event) => {
-    if (!drag || drag.pid !== event.pointerId) return;
-    const dx = event.clientX - drag.x;
-    const dy = event.clientY - drag.y;
-    if (!drag.moved) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      if (Math.abs(dy) > Math.abs(dx)) {
-        drag = null;
-        return;
-      }
-      drag.moved = true;
-    }
-    drag.dx = dx;
-    const rot = Math.max(-12, Math.min(12, dx / 18));
-    tilt.style.transform = `translateX(${dx}px) rotate(${rot}deg)`;
-    const pair = stamps();
-    if (pair.know) pair.know.style.opacity = String(Math.min(1, Math.max(0, dx / 90)));
-    if (pair.miss) pair.miss.style.opacity = String(Math.min(1, Math.max(0, -dx / 90)));
-  });
-  const finish = (event) => {
-    if (!drag || drag.pid !== event.pointerId) return;
-    const info = drag;
-    drag = null;
-    tilt.style.transform = "";
+
+  const clearTint = () => {
+    tilt.style.removeProperty("--swipe-amt");
+    tilt.style.removeProperty("--swipe-tint");
     const pair = stamps();
     if (pair.know) pair.know.style.opacity = "0";
     if (pair.miss) pair.miss.style.opacity = "0";
-    if (!info.moved) {
-      flip();
+  };
+
+  const paint = (dx) => {
+    const width = tilt.getBoundingClientRect().width || 1;
+    const reach = width * 0.25;
+    const rot = Math.max(-12, Math.min(12, dx / 18));
+    tilt.style.transform = `translate3d(${dx}px, 0, 0) rotate(${rot}deg)`;
+    const amount = Math.min(1, Math.abs(dx) / reach);
+    tilt.style.setProperty("--swipe-amt", amount.toFixed(3));
+    tilt.style.setProperty("--swipe-tint", dx >= 0 ? "var(--know)" : "var(--miss)");
+    const pair = stamps();
+    if (pair.know) pair.know.style.opacity = String(dx > 0 ? amount : 0);
+    if (pair.miss) pair.miss.style.opacity = String(dx < 0 ? amount : 0);
+  };
+
+  const snapBack = () => {
+    tilt.classList.remove("is-dragging");
+    tilt.classList.add("is-snapping");
+    tilt.style.transform = "";
+    clearTint();
+    const done = () => tilt.classList.remove("is-snapping");
+    tilt.addEventListener("transitionend", done, { once: true });
+    window.setTimeout(done, 260);
+  };
+
+  tilt.addEventListener("pointerdown", (event) => {
+    if (event.button || busy) return;
+    if (event.target.closest("button, a")) return;
+    try { tilt.setPointerCapture(event.pointerId); } catch { /* already gone */ }
+    cardDragging = true;
+    const wrap = event.target.closest(".wordwrap");
+    active = {
+      pid: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      lastY: event.clientY,
+      dx: 0,
+      dy: 0,
+      axis: "",
+      samples: [{ x: event.clientX, t: event.timeStamp }],
+      scroller: wrap && wrap.scrollHeight > wrap.clientHeight + 4 ? wrap : null,
+    };
+    tilt.classList.remove("is-snapping");
+    tilt.classList.add("is-dragging");
+  });
+
+  tilt.addEventListener("pointermove", (event) => {
+    if (!active || active.pid !== event.pointerId) return;
+    const dx = event.clientX - active.x;
+    const dy = event.clientY - active.y;
+    active.dx = dx;
+    active.dy = dy;
+    active.samples.push({ x: event.clientX, t: event.timeStamp });
+    active.samples = active.samples.filter((sample) => event.timeStamp - sample.t <= 90);
+    if (!active.axis) {
+      if (Math.hypot(dx, dy) < 8) return;
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 0.55) active.axis = "x";
+      else if (active.scroller && Math.abs(dy) > 24 && Math.abs(dy) > Math.abs(dx) * 1.8) active.axis = "y";
+      else if (Math.abs(dx) > 18) active.axis = "x";
+      else return;
+    }
+    if (active.axis === "x") horizontalDrag = true;
+    if (active.axis === "y") {
+      if (active.scroller) active.scroller.scrollTop -= event.clientY - active.lastY;
+      active.lastY = event.clientY;
       return;
     }
-    if (info.dx > 96 || info.dx < -96) {
+    paint(dx);
+  });
+
+  const finish = (event) => {
+    if (!active || active.pid !== event.pointerId) return;
+    const info = active;
+    active = null;
+    cardDragging = false;
+    horizontalDrag = false;
+    const moved = Math.hypot(info.dx, info.dy);
+    const width = tilt.getBoundingClientRect().width || 1;
+    const threshold = width * 0.25;
+    const first = info.samples[0];
+    const last = info.samples[info.samples.length - 1];
+    const vx = last && first && last.t > first.t ? (last.x - first.x) / (last.t - first.t) : 0;
+    const flicked = info.axis === "x" && Math.abs(vx) >= FLICK && Math.abs(info.dx) >= 28 && Math.sign(vx) === Math.sign(info.dx);
+    const commit = info.axis === "x" && (Math.abs(info.dx) >= threshold || flicked);
+    if (commit) {
+      tilt.classList.remove("is-dragging");
       suppressClick = true;
       window.setTimeout(() => { suppressClick = false; }, 450);
+      grade(info.dx > 0);
+      return;
     }
-    if (info.dx > 96) grade(true);
-    else if (info.dx < -96) grade(false);
+    snapBack();
+    if (!info.axis && moved <= TAP) flip();
+    maybeRebuildStudy();
   };
+
   tilt.addEventListener("pointerup", finish);
-  tilt.addEventListener("pointercancel", () => {
-    drag = null;
-    tilt.style.transform = "";
+  tilt.addEventListener("pointercancel", (event) => {
+    if (!active || active.pid !== event.pointerId) return;
+    active = null;
+    cardDragging = false;
+    horizontalDrag = false;
+    snapBack();
+    maybeRebuildStudy();
   });
+}
+
+function maybeRebuildStudy() {
+  if (!rebuildStudy || cardDragging) return;
+  rebuildStudy = false;
+  const card = document.getElementById("card");
+  const flipped = card && card.classList.contains("is-flipped");
+  if (view === "study" && session && session.index === 0 && session.done === 0 && !flipped) {
+    session = null;
+    render();
+  }
 }
 
 async function toggleLevel(id) {
@@ -2464,8 +2545,11 @@ function prefetchTopicFiles() {
       const card = document.getElementById("card");
       const flipped = card && card.classList.contains("is-flipped");
       if (view === "study" && session && session.index === 0 && session.done === 0 && !flipped) {
-        session = null;
-        render();
+        if (cardDragging) rebuildStudy = true;
+        else {
+          session = null;
+          render();
+        }
       }
       window.setTimeout(step, 60);
     }).catch(() => window.setTimeout(step, 200));
@@ -2528,6 +2612,11 @@ function resetProgress() {
   render();
   toast("Đã xóa tiến độ trên máy này");
 }
+
+document.addEventListener("touchmove", (event) => {
+  if (!horizontalDrag) return;
+  if (event.cancelable) event.preventDefault();
+}, { passive: false });
 
 document.addEventListener("click", (event) => {
   const nav = event.target.closest("[data-nav]");
