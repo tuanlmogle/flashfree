@@ -28,16 +28,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import build_vocab  # noqa: E402
 from phrase_select import (  # noqa: E402
+    EVERYDAY_PHRASES,
     TOPIC_COLLOCATION,
     TOPIC_NAME,
     TOPIC_PHRASE,
+    assign_usage_levels,
+    association,
     collocations_in,
-    keep_common,
-    keep_frequent,
+    gloss_rank,
+    has_pronoun,
     phrase_kind,
+    reject_usage,
+    usable_phrase,
 )
 from topics import topic_levels  # noqa: E402
-from wordfreq import zipf_frequency  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -45,11 +49,17 @@ RAW = DATA / "raw"
 FIELDS = DATA / "fields"
 WIKT_URL = "https://kaikki.org/dictionary/English/kaikki.org-dictionary-English.jsonl.gz"
 WIKT_GZ = RAW / "enwiktionary.jsonl.gz"
-CACHE = RAW / "en-mwe.jsonl"
+CACHE = RAW / "en-mwe-v2.jsonl"
 UA = "FlashFreeBuilder/1.0 (educational vocabulary app; github.com/tuanlmogle/flashfree)"
 
-PHRASE_CAP = 2200
-COLLOCATION_CAP = 1400
+PHRASE_CAP = 3200
+PHRASE_MIN_COUNT = 2
+COLLOCATION_CAP = 1200
+COLLOCATION_MIN_COUNT = 15
+# Below this, the words co-occur about as often as chance, so it is not a phrase.
+MIN_ASSOCIATION = 0.6
+# "run out of" is not a Wiktionary headword. The base entry covers it.
+BASE_WHEN_MISSING = {"run out of": "run out"}
 EMO = {TOPIC_PHRASE: "1f4ac", TOPIC_COLLOCATION: "1f517"}
 
 
@@ -77,6 +87,8 @@ def _gloss(sense: dict) -> str:
         low = gloss.lower()
         if low.startswith(("form of ", "alternative form", "synonym of ", "abbreviation of ")):
             continue
+        if "used other than figuratively" in low or "used other than with a figurative" in low:
+            continue
         cleaned = build_vocab.tidy_english(gloss)
         if len(cleaned) >= 8:
             return cleaned
@@ -102,14 +114,14 @@ def extract_mwe() -> list[dict]:
         print(f"cached wiktionary phrases: {len(rows)}")
         return rows
     download_wikt()
-    rows = []
-    seen = set()
+    rows_by_word = {}
+    seen = {}
     scanned = 0
     with gzip.open(WIKT_GZ, "rt", encoding="utf-8") as handle:
         for line in handle:
             scanned += 1
             if scanned % 400000 == 0:
-                print(f"scanned {scanned} kept {len(rows)}")
+                print(f"scanned {scanned} kept {len(rows_by_word)}")
             if " " not in line[:240] and "idiom" not in line and "phrasal" not in line:
                 continue
             try:
@@ -130,8 +142,10 @@ def extract_mwe() -> list[dict]:
                     cats.append(name)
             pos = (entry.get("pos") or "").lower()
             best = None
-            for sense in senses:
+            for index, sense in enumerate(senses):
                 tags = entry_tags + list(sense.get("tags") or []) + cats
+                if reject_usage(tags):
+                    continue
                 gloss = _gloss(sense)
                 if not gloss:
                     continue
@@ -140,24 +154,33 @@ def extract_mwe() -> list[dict]:
                     kind = "collocation"
                 if not kind:
                     continue
+                rank = gloss_rank(word.lower(), pos, tags, gloss, index)
                 blob = " ".join(str(tag).lower() for tag in tags)
-                priority = 2 if ("idiom" in blob or "phrasal" in blob) else 1
-                if best is None or priority > best[0]:
-                    best = (priority, kind, gloss)
+                slang = "slang" in blob or "vulgar" in blob or "offensive" in blob
+                if best is None or rank < best[0]:
+                    best = (rank, kind, gloss, slang)
             if not best:
                 continue
-            _priority, kind, gloss = best
+            _rank, kind, gloss, slang = best
             key = word.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            rows.append({
+            row = {
                 "word": key,
                 "pos": "verb" if kind == "phrasal" else "phrase",
                 "kind": kind,
                 "en": gloss,
                 "vi": _vi(entry),
-            })
+                "slang": slang,
+            }
+            previous_rank = seen.get(key)
+            if previous_rank is not None and best[0] >= previous_rank:
+                if row["vi"] and not rows_by_word[key].get("vi"):
+                    rows_by_word[key]["vi"] = row["vi"]
+                continue
+            if previous_rank is not None and rows_by_word[key].get("vi") and not row["vi"]:
+                row["vi"] = rows_by_word[key]["vi"]
+            seen[key] = best[0]
+            rows_by_word[key] = row
+    rows = list(rows_by_word.values())
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     with CACHE.open("w", encoding="utf-8") as handle:
         for row in rows:
@@ -166,13 +189,57 @@ def extract_mwe() -> list[dict]:
     return rows
 
 
-def score_rows(rows: list[dict], counts: dict[str, int]) -> None:
-    for row in rows:
-        row["zipf"] = zipf_frequency(row["word"], "en")
-        row["count"] = counts.get(row["word"], 0)
+VULGAR_TOKENS = build_vocab.BAD_WORD | {
+    "piss", "pissed", "pissing", "goddamn", "crap", "arse", "ass",
+}
+BAD_PHRASE_GLOSS = (
+    "cognition", "homogeneous mixture", "spermatozoa", "grammatical category",
+    "sexual intercourse",
+)
 
 
-def tatoeba_scan(phrases: set[str]) -> tuple[dict[str, int], dict[str, dict], dict[str, int]]:
+def vulgar_text(word: str, gloss: str) -> bool:
+    bits = set(re.findall(r"[a-z']+", (word or "").lower()))
+    if bits & VULGAR_TOKENS:
+        return True
+    blob = (gloss or "").lower()
+    return any(bit in blob for bit in ("vulgar", "obscene", "offensive term", "slur", "sexual intercourse"))
+
+
+def phrase_gloss(wn, phrase: str) -> str:
+    """Pick the noun sense whose examples actually use this phrase."""
+    parts = [part for part in phrase.split() if part not in {"a", "an", "the"}]
+    if len(parts) < 2 or wn is None:
+        return ""
+    head = parts[-1]
+    others = [part for part in parts[:-1] if len(part) >= 3]
+    found = []
+    for item in wn.words(head.replace(" ", "_")):
+        if item.pos != "n" or item.lemma().lower() != head:
+            continue
+        if item.lemma()[:1].isupper():
+            return ""
+        for sense in item.senses()[:8]:
+            definition = build_vocab.tidy_english(sense.synset().definition() or "")
+            if ";" in definition:
+                head, rest = definition.split(";", 1)
+                if any(bit in rest.lower() for bit in ("pronoun", "grammar", "singular", "quantifier")):
+                    definition = head.strip()
+            if len(definition) < 8:
+                continue
+            if any(bit in definition.lower() for bit in BAD_PHRASE_GLOSS):
+                continue
+            blob = (definition + " " + " ".join(sense.synset().examples())).lower()
+            score = sum(1 for other in others if other in blob)
+            found.append((score, len(found), definition))
+        break
+    if not found:
+        return ""
+    found.sort(key=lambda item: (-item[0], item[1]))
+    return found[0][2]
+
+
+def tatoeba_scan(phrases: set[str]) -> tuple[dict[str, int], dict[str, dict], dict[str, int], dict[str, int], int]:
     """Count collocations and keep the shortest linked example for each phrase."""
     eng_path = build_vocab.FILES["eng"]
     vie_path = build_vocab.FILES["vie"]
@@ -183,10 +250,12 @@ def tatoeba_scan(phrases: set[str]) -> tuple[dict[str, int], dict[str, dict], di
         by_first[phrase.split()[0]].append(phrase)
     collocation_counts: dict[str, int] = defaultdict(int)
     phrase_counts: dict[str, int] = defaultdict(int)
+    unigram: dict[str, int] = defaultdict(int)
+    sentences = 0
     pending: dict[str, tuple[int, str, str]] = {}
     if not eng_path.exists():
         print("tatoeba english file missing")
-        return collocation_counts, {}, phrase_counts
+        return collocation_counts, {}, phrase_counts, {}, 0
 
     def remember(phrase: str, sid: int, text: str, author: str) -> None:
         previous = pending.get(phrase)
@@ -212,6 +281,9 @@ def tatoeba_scan(phrases: set[str]) -> tuple[dict[str, int], dict[str, dict], di
             if author in {"\\N", r"\N", "NULL"}:
                 author = ""
             low_tokens = [tok.lower() for tok in tokens]
+            sentences += 1
+            for tok in set(low_tokens):
+                unigram[tok] += 1
             for phrase in collocations_in(low_tokens):
                 collocation_counts[phrase] += 1
                 remember(phrase, sid, text, author)
@@ -259,8 +331,8 @@ def tatoeba_scan(phrases: set[str]) -> tuple[dict[str, int], dict[str, dict], di
         if vi:
             with_vi += 1
         examples[phrase] = {"en": text, "vi": vi, "id": sid, "author": author}
-    print(f"tatoeba examples: {len(examples)}; with Vietnamese: {with_vi}")
-    return collocation_counts, examples, phrase_counts
+    print(f"tatoeba examples: {len(examples)}; with Vietnamese: {with_vi}; sentences {sentences}")
+    return collocation_counts, examples, phrase_counts, unigram, sentences
 
 
 def load_cards() -> tuple[list[tuple[Path, dict]], dict[str, list[dict]], set[str]]:
@@ -299,7 +371,7 @@ def attach_example(card: dict, example: dict | None) -> None:
     card["tatoeba"] = ref
 
 
-def new_card(word: str, pos: str, level: str, meaning: str, lang: str, topic: str, ids: set[str]) -> dict:
+def new_card(word: str, pos: str, level: str, meaning: str, lang: str, topic: str, ids: set[str], freq: int) -> dict:
     card_id = build_vocab.slug(word, pos)
     if card_id in ids:
         suffix = 2
@@ -316,6 +388,8 @@ def new_card(word: str, pos: str, level: str, meaning: str, lang: str, topic: st
         "topics": [topic],
         "emo": [EMO[topic]],
     }
+    if freq:
+        card["freq"] = freq
     if lang == "en":
         card["meaningLang"] = "en"
     return card
@@ -339,8 +413,7 @@ def meaning_for(word: str, pos: str, vi: str, en: str, bank, wn) -> tuple[str, s
             text = build_vocab.english_meaning(wn, word, try_pos if try_pos != "phrase" else "noun")
             if text:
                 return text, "en"
-        noun = word.split()[-1]
-        text = build_vocab.english_meaning(wn, noun, "noun")
+        text = phrase_gloss(wn, word)
         if text:
             return text, "en"
     return "", ""
@@ -365,7 +438,12 @@ def write_outputs(grouped, new_cards: list[dict], changed_paths: set[Path]) -> N
     }
     for topic, path in files.items():
         group = by_topic.get(topic) or []
-        group.sort(key=lambda card: (build_vocab.LEVEL_RANK.get(card["level"], 9), card["word"]))
+        group.sort(key=lambda card: (
+            build_vocab.LEVEL_RANK.get(card["level"], 9),
+            0 if card.get("example") else 1,
+            -(card.get("freq") or 0),
+            card["word"],
+        ))
         path.write_text(json.dumps({"cards": group}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         print(f"wrote {path.name} {len(group)} {path.stat().st_size}")
 
@@ -446,83 +524,188 @@ def refresh_meta() -> None:
     print("total", meta["total"])
 
 
-def main() -> None:
-    extracted = extract_mwe()
-    # A cheap first score so Tatoeba only indexes phrases we might keep.
-    for row in extracted:
-        row["zipf"] = zipf_frequency(row["word"], "en")
-    phrase_set = {row["word"] for row in extracted if row.get("kind") in {"phrasal", "idiom"}}
-    collocation_counts, examples, phrase_counts = tatoeba_scan(phrase_set)
-    for row in extracted:
-        row["count"] = phrase_counts.get(row["word"], 0)
-    phrase_rows = [row for row in extracted if row.get("kind") in {"phrasal", "idiom"}]
-    common = [row for row in phrase_rows if (row.get("zipf") or 0) >= 4.5]
-    rarer = [row for row in phrase_rows if 3.5 <= (row.get("zipf") or 0) < 4.5]
-    phrases = keep_common(common, cap=4500, min_zipf=4.5, min_count=0)
-    phrases += keep_common(rarer, cap=400, min_zipf=3.5, min_count=0)
-    wiki_collo = {row["word"]: row for row in extracted if row.get("kind") == "collocation"}
-    collo_rows = []
-    for phrase, count in collocation_counts.items():
-        if phrase in {row["word"] for row in phrases}:
+def _row_usable(row: dict, count: int, minimum: int, unigram: dict, sentences: int) -> bool:
+    if has_pronoun(row["word"]):
+        return False
+    if count < minimum:
+        return False
+    if row["word"] not in EVERYDAY_PHRASES and association(row["word"], count, unigram, sentences) < MIN_ASSOCIATION:
+        return False
+    return usable_phrase(
+        row["word"],
+        count,
+        slang=bool(row.get("slang")),
+        vulgar=vulgar_text(row["word"], row.get("en") or ""),
+    )
+
+
+def select_phrases(extracted: list[dict], counts: dict[str, int], unigram: dict, sentences: int) -> list[dict]:
+    by_word = {row["word"]: row for row in extracted if row.get("kind") in {"phrasal", "idiom"}}
+    kept = []
+    for row in by_word.values():
+        count = counts.get(row["word"], 0)
+        if not _row_usable(row, count, PHRASE_MIN_COUNT, unigram, sentences):
             continue
-        info = wiki_collo.get(phrase) or {}
-        collo_rows.append({
+        chosen = dict(row)
+        chosen["count"] = count
+        kept.append(chosen)
+    have = {row["word"] for row in kept}
+    for longer, base in BASE_WHEN_MISSING.items():
+        if base in have or longer in have:
+            continue
+        row = by_word.get(base)
+        count = counts.get(base, 0)
+        if not row or count <= 0 or vulgar_text(base, row.get("en") or ""):
+            print(f"missing base for {longer}")
+            continue
+        chosen = dict(row)
+        chosen["count"] = count
+        chosen["slang"] = False
+        kept.append(chosen)
+        have.add(base)
+        print(f"covered {longer} with {base} ({count})")
+    kept.sort(key=lambda row: (-row["count"], row["word"]))
+    return assign_usage_levels(kept[:PHRASE_CAP])
+
+
+def select_collocations(counts: dict[str, int], examples: dict, wiki: dict, phrase_words: set[str], unigram: dict, sentences: int) -> list[dict]:
+    rows = []
+    for phrase, count in counts.items():
+        if phrase in phrase_words or phrase not in examples:
+            continue
+        info = wiki.get(phrase) or {}
+        row = {
             "word": phrase,
-            "zipf": zipf_frequency(phrase, "en"),
             "count": count,
             "vi": info.get("vi") or "",
             "en": info.get("en") or "",
-        })
-    collocations = keep_frequent(collo_rows, cap=COLLOCATION_CAP, min_count=20)
+            "slang": bool(info.get("slang")),
+            "kind": "collocation",
+        }
+        if not _row_usable(row, count, COLLOCATION_MIN_COUNT, unigram, sentences):
+            continue
+        rows.append(row)
+    rows.sort(key=lambda row: (-row["count"], row["word"]))
+    return assign_usage_levels(rows[:COLLOCATION_CAP])
+
+
+def drop_stale_topics(grouped, phrase_words: set[str], collo_words: set[str]) -> set[Path]:
+    changed = set()
+    for _path, payload in grouped:
+        for card in payload.get("cards") or []:
+            topics = list(card.get("topics") or [])
+            word = (card.get("word") or "").lower()
+            kept_topics = [
+                topic for topic in topics
+                if not (topic == TOPIC_PHRASE and word not in phrase_words)
+                and not (topic == TOPIC_COLLOCATION and word not in collo_words)
+            ]
+            if kept_topics == topics:
+                continue
+            card["topics"] = kept_topics
+            card.pop("freq", None)
+            if card.get("_src"):
+                changed.add(card["_src"])
+    return changed
+
+
+def learner_preview(cards: list[dict], levels=("B1", "B2")) -> list[dict]:
+    pool = [card for card in cards if card.get("level") in levels]
+    pool.sort(key=lambda card: (
+        build_vocab.LEVEL_RANK.get(card["level"], 9),
+        0 if card.get("example") else 1,
+        -(card.get("freq") or 0),
+        card.get("word") or "",
+    ))
+    return pool[:15]
+
+
+def main() -> None:
+    extracted = extract_mwe()
+    phrase_set = {row["word"] for row in extracted if row.get("kind") in {"phrasal", "idiom"}}
+    collocation_counts, examples, phrase_counts, unigram, sentences = tatoeba_scan(phrase_set)
+    phrases = select_phrases(extracted, phrase_counts, unigram, sentences)
+    wiki_collo = {row["word"]: row for row in extracted if row.get("kind") == "collocation"}
+    collocations = select_collocations(
+        collocation_counts, examples, wiki_collo, {row["word"] for row in phrases}, unigram, sentences
+    )
     print(f"selected phrases {len(phrases)} collocations {len(collocations)}")
+    for word in ("give up", "figure out", "find out", "come on", "pick up", "look for",
+                 "get up", "run out", "hang out", "make sure", "take care of", "by the way", "of course"):
+        row = next((item for item in phrases + collocations if item["word"] == word), None)
+        if row:
+            print(f"anchor {word}: {row['level']} count={row['count']} deck={row.get('kind')} | {row.get('en','')[:80]}")
+        else:
+            print(f"anchor {word}: MISSING")
 
     wanted = {row["word"] for row in phrases} | {row["word"] for row in collocations}
-    missing_vi = {word for word in wanted if not any(row["word"] == word and row.get("vi") for row in phrases)}
+    have_vi = {row["word"] for row in phrases + collocations if row.get("vi")}
+    missing_vi = wanted - have_vi
     bank = build_vocab.load_wiktionary(missing_vi) if missing_vi else {}
     wn = build_vocab.english_wordnet()
 
     grouped, by_word, ids = load_cards()
-    changed_paths = set()
+    changed_paths = drop_stale_topics(
+        grouped,
+        {row["word"] for row in phrases},
+        {row["word"] for row in collocations},
+    )
     new_cards = []
+    placed = {TOPIC_PHRASE: [], TOPIC_COLLOCATION: []}
     tagged = 0
 
-    def place(word: str, pos: str, topic: str, vi: str, en: str) -> None:
+    def place(row: dict, topic: str, pos: str) -> None:
         nonlocal tagged
+        word = row["word"]
+        freq = int(row.get("freq") or row.get("count") or 0)
+        example = examples.get(word)
+        if not example:
+            return
         existing = by_word.get(word) or []
         if existing:
             for card in existing:
                 topics = list(card.get("topics") or [])
+                changed = False
                 if topic not in topics and len(topics) < 6:
                     topics.append(topic)
                     card["topics"] = topics
                     tagged += 1
-                    if card.get("_src"):
-                        changed_paths.add(card["_src"])
+                    changed = True
+                if card.get("freq") != freq:
+                    card["freq"] = freq
+                    changed = True
+                if changed and card.get("_src"):
+                    changed_paths.add(card["_src"])
             before = existing[0].get("example")
-            attach_example(existing[0], examples.get(word))
+            attach_example(existing[0], example)
             if existing[0].get("example") != before and existing[0].get("_src"):
                 changed_paths.add(existing[0]["_src"])
+            placed[topic].append(existing[0])
             return
-        level = build_vocab.level_from_zipf(zipf_frequency(word, "en") or 0)
-        meaning, lang = meaning_for(word, pos, vi, en, bank, wn)
+        meaning, lang = meaning_for(word, pos, row.get("vi") or "", row.get("en") or "", bank, wn)
         if not meaning:
             return
-        if topic == TOPIC_COLLOCATION and word not in examples:
-            return
-        card = new_card(word, pos, level, meaning, lang, topic, ids)
-        attach_example(card, examples.get(word))
+        card = new_card(word, pos, row["level"], meaning, lang, topic, ids, freq)
+        attach_example(card, example)
         new_cards.append(card)
+        placed[topic].append(card)
         by_word[word].append(card)
 
     for row in phrases:
-        place(row["word"], row.get("pos") or "phrase", TOPIC_PHRASE, row.get("vi") or "", row.get("en") or "")
+        place(row, TOPIC_PHRASE, row.get("pos") or "phrase")
     for row in collocations:
-        place(row["word"], "phrase", TOPIC_COLLOCATION, row.get("vi") or "", row.get("en") or "")
+        place(row, TOPIC_COLLOCATION, "phrase")
     print(f"tagged existing {tagged}; new cards {len(new_cards)}")
     write_outputs(grouped, new_cards, changed_paths)
     refresh_meta()
-    samples = [card["word"] for card in new_cards[:8]]
-    print("samples", samples)
+    for topic, label in ((TOPIC_PHRASE, "phrasal"), (TOPIC_COLLOCATION, "collocation")):
+        cards = placed[topic]
+        with_example = sum(1 for card in cards if card.get("example"))
+        with_vi = sum(1 for card in cards if card.get("meaningLang") != "en" and card.get("meaning"))
+        print(f"{label} placed {len(cards)} examples {with_example} vi {with_vi}")
+        print(f"{label} B1+B2 first 15:")
+        for card in learner_preview(cards):
+            print(f"  {card['level']} {card.get('freq')} {card['word']} | {(card.get('example') or '')[:70]}")
 
 
 if __name__ == "__main__":

@@ -4,7 +4,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from phrase_select import collocations_in, keep_common, phrase_kind, reject_usage
+from phrase_select import (
+    assign_usage_levels,
+    association,
+    collocations_in,
+    gloss_rank,
+    has_placeholder,
+    has_pronoun,
+    keep_common,
+    level_for_rank,
+    phrase_kind,
+    reject_usage,
+    usable_phrase,
+)
 
 
 class PhraseSelectTest(unittest.TestCase):
@@ -41,6 +53,46 @@ class PhraseSelectTest(unittest.TestCase):
         self.assertIn("pay attention", collocations_in(["pay", "attention", "please"]))
         self.assertIn("take a break", collocations_in(["Let's", "take", "a", "break"]))
         self.assertNotIn("make a of", collocations_in(["make", "a", "of"]))
+
+    def test_everyday_phrases_and_the_learner_sense(self):
+        self.assertEqual(phrase_kind("of course", "adv", []), "idiom")
+        self.assertEqual(phrase_kind("by the way", "prep_phrase", ["idiomatic"]), "idiom")
+        self.assertEqual(phrase_kind("run out", "verb", ["phrasal"]), "phrasal")
+        everyday = gloss_rank("come on", "intj", [], "Come along with me.", 0)
+        slang = gloss_rank("come on", "verb", ["idiomatic"], "To show sexual interest.", 0)
+        self.assertLess(everyday, slang)
+        first = gloss_rank("get up", "verb", ["literally"], "To move upward.", 0)
+        bed = gloss_rank("get up", "verb", [], "To rise from one's bed.", 1)
+        self.assertLess(bed, first)
+        hang = gloss_rank("hang out", "verb", ["idiomatic", "slang"], "To spend time with somebody.", 0)
+        crave = gloss_rank("hang out", "verb", ["informal"], "To crave or desperately want.", 3)
+        self.assertLess(hang, crave)
+        self.assertTrue(has_pronoun("forget you"))
+        self.assertFalse(has_pronoun("give up"))
+        chance = association("you think", 50, {"you": 1000, "think": 1000}, 10000)
+        bound = association("give up", 80, {"give": 100, "up": 200}, 10000)
+        self.assertLess(chance, 0)
+        self.assertGreater(bound, 1)
+
+    def test_usage_levels_follow_how_often_the_phrase_occurs(self):
+        self.assertEqual(level_for_rank(0, 100), "A2")
+        self.assertEqual(level_for_rank(20, 100), "B1")
+        self.assertEqual(level_for_rank(40, 100), "B2")
+        self.assertEqual(level_for_rank(70, 100), "C1")
+        self.assertEqual(level_for_rank(90, 100), "C2")
+        self.assertTrue(has_placeholder("what was someone smoking"))
+        self.assertFalse(usable_phrase("what was someone smoking", 1, slang=True))
+        self.assertFalse(usable_phrase("never said", 0))
+        self.assertTrue(usable_phrase("take care of someone", 50))
+        rows = assign_usage_levels([
+            {"word": f"rare {index}", "count": index} for index in range(1, 9)
+        ] + [
+            {"word": "give up", "count": 400},
+            {"word": "figure out", "count": 200},
+        ])
+        self.assertEqual(rows[0]["word"], "give up")
+        self.assertEqual(rows[0]["level"], "A2")
+        self.assertEqual(rows[-1]["level"], "C2")
 
     def test_keep_common_ranks_by_usage(self):
         rows = [

@@ -129,10 +129,11 @@ Hai chủ đề, tải khi người học mở chúng (`data/fields/deck-phrasal
 | Wiktionary tiếng Anh, bản trích kaikki.org (wiktextract) | Cụm động từ và thành ngữ, kể cả nhãn phrasal / idiomatic, và bản dịch tiếng Việt nếu mục có | **CC BY-SA 4.0** và GFDL. Bỏ mục ghi British-only, archaic, obsolete, rare, hoặc dated. |
 | Wiktionary tiếng Việt (kaikki) | Nghĩa tiếng Việt khi có | **CC BY-SA 4.0** và GFDL |
 | Open English WordNet 2024 | Câu giải nghĩa tiếng Anh khi không có tiếng Việt | **CC BY 4.0** |
-| Tatoeba câu tiếng Anh–Việt | Câu ví dụ, và đếm cặp động từ+danh từ / tính từ+danh từ hay đi chung | **CC BY 2.0 FR** |
-| wordfreq (Robyn Speer) | Giữ cụm dùng thường và xếp mức CEFR gần đúng | **CC BY-SA 4.0** |
+| Tatoeba câu tiếng Anh–Việt | Câu ví dụ, và đếm số câu chứa **cả cụm** (không tách từng từ) để xếp mức và thứ tự | **CC BY 2.0 FR** |
 
-Cụm động từ và thành ngữ nằm chung một chủ đề, **Cụm động từ & thành ngữ**. Cụm từ hay đi chung là chủ đề thứ hai. Không dùng danh sách Oxford, Cambridge, hay sách thành ngữ có bản quyền.
+Mức của hai chủ đề này lấy từ số lần cả cụm xuất hiện trong Tatoeba, trải từ A2 (cụm gặp hàng ngày) đến C2 (cụm hiếm). Cụm không có câu nào, tiếng lóng/thô tục, hoặc mẫu `someone`/`something` không thông dụng thì bỏ. Trong một mức, thẻ có câu ví dụ đứng trước. wordfreq không dùng để xếp mức cụm, vì nó cộng tần suất từng từ chứ không phải tần suất cả cụm.
+
+Cụm động từ và thành ngữ nằm chung một chủ đề, **Cụm động từ & thành ngữ**. Cụm từ hay đi chung là chủ đề thứ hai. `run out of` không có mục riêng trên Wiktionary; thẻ `run out` phủ cách dùng đó. Không dùng danh sách Oxford, Cambridge, hay sách thành ngữ có bản quyền.
 
 ## 6c. Open English WordNet, mục phân loại
 

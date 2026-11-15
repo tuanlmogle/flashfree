@@ -747,7 +747,15 @@ function planToday(today) {
   });
   unseen.sort((a, b) => {
     if (!!a.own !== !!b.own) return a.own ? -1 : 1;
-    return LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level) || hash(a.id) - hash(b.id);
+    const level = LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level);
+    if (level) return level;
+    if (typeof a.freq === "number" && typeof b.freq === "number") {
+      const example = (b.example ? 1 : 0) - (a.example ? 1 : 0);
+      if (example) return example;
+      const freq = (b.freq || 0) - (a.freq || 0);
+      if (freq) return freq;
+    }
+    return hash(a.id) - hash(b.id);
   });
 
   const kept = (STATE.introduced[today] || []).filter((id) => {

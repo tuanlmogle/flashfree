@@ -6,6 +6,8 @@ text that already comes from openly licensed sources.
 
 from __future__ import annotations
 
+import math
+
 PARTICLES = frozenset({
     "up", "down", "out", "off", "on", "in", "over", "away", "back", "through",
     "around", "about", "along", "apart", "by", "for", "into", "onto", "after",
@@ -109,6 +111,18 @@ TOPIC_NAME = {
     TOPIC_COLLOCATION: "Cụm từ hay đi chung",
 }
 
+# Fixed phrases learners meet constantly. Wiktionary does not always tag them idiom.
+EVERYDAY_PHRASES = frozenset({
+    "of course", "by the way", "come on", "make sure", "give up", "figure out",
+    "find out", "pick up", "look for", "get up", "run out", "hang out",
+    "take care of",
+})
+PREFERRED_POS = {
+    "of course": "adv",
+    "come on": "intj",
+    "by the way": "prep_phrase",
+}
+
 
 def _tags(tags) -> set[str]:
     return {str(tag).lower().replace("_", " ").strip() for tag in tags or []}
@@ -140,6 +154,9 @@ NOUN_BLOCK = CLOSED | frozenset({
     "anything", "something", "nothing", "everything", "enough",
     "lot", "one", "way", "thing", "back", "now", "over", "else",
     "here", "there", "someone", "anyone", "everybody", "somebody",
+    "come", "left", "little", "two", "three", "four", "five", "six",
+    "seven", "eight", "nine", "ten", "things", "ones", "bit",
+    "last", "next", "lots",
 })
 
 
@@ -169,7 +186,9 @@ def phrase_kind(word: str, pos: str, tags) -> str | None:
     if phrasal:
         return "phrasal"
     long = [part for part in lexical if len(part) >= 4]
-    if idiomatic and (len(lexical) >= 2 or long):
+    if idiomatic and (len(lexical) >= 2 or long or len(parts) >= 3):
+        return "idiom"
+    if text in EVERYDAY_PHRASES:
         return "idiom"
     return None
 
@@ -214,6 +233,93 @@ def _noun_ok(token: str) -> bool:
         and token not in NOUN_BLOCK
         and token not in ADJECTIVES
     )
+
+
+PLACEHOLDERS = frozenset({
+    "someone", "something", "somebody", "one's", "someone's", "somebody's",
+})
+
+
+def gloss_rank(word: str, pos: str, tags, gloss: str, index: int = 0) -> tuple:
+    """Lower is better. The first everyday sense beats a later slang or sexual one."""
+    blob = " ".join(_tags(tags))
+    low = (gloss or "").lower()
+    awkward = any(bit in low for bit in ("sexual", "menstruat", "intercourse", "to kill"))
+    literal = "literally" in blob and "idiom" not in blob and "phrasal" not in blob
+    preferred = PREFERRED_POS.get(word or "")
+    return (
+        1 if awkward else 0,
+        1 if literal else 0,
+        0 if preferred and pos == preferred else 1,
+        index,
+    )
+
+
+PRONOUNS = frozenset({
+    "i", "you", "your", "yours", "me", "my", "mine", "we", "us", "our",
+    "he", "she", "him", "her", "his", "they", "them", "their", "it", "its",
+})
+
+
+def has_pronoun(word: str) -> bool:
+    return any(part in PRONOUNS for part in (word or "").lower().split())
+
+
+def association(word: str, count: int, unigram: dict, sentences: int) -> float:
+    """How much more often the whole phrase occurs than its words would by chance."""
+    parts = (word or "").split()
+    if count <= 0 or sentences <= 0 or not parts:
+        return -99.0
+    expected = float(sentences)
+    for part in parts:
+        seen = unigram.get(part, 0)
+        if seen <= 0:
+            return -99.0
+        expected *= seen / sentences
+    if expected <= 0:
+        return -99.0
+    return math.log(count / expected)
+
+
+def has_placeholder(word: str) -> bool:
+    parts = (word or "").lower().replace("’", "'").split()
+    return any(part in PLACEHOLDERS or part.startswith("someone") or part.startswith("something") for part in parts)
+
+
+def usable_phrase(word: str, count: int, slang: bool = False, vulgar: bool = False) -> bool:
+    """Drop zero-evidence, vulgar, slang-only, and awkward placeholder headwords."""
+    if vulgar or count <= 0:
+        return False
+    if slang and count < 30:
+        return False
+    if has_placeholder(word) and count < 40:
+        return False
+    return True
+
+
+def level_for_rank(index: int, total: int) -> str:
+    """Most-used phrases are A2; rarer ones step through B1, B2, C1, and C2."""
+    if total <= 1:
+        return "A2"
+    frac = index / total
+    if frac < 0.12:
+        return "A2"
+    if frac < 0.34:
+        return "B1"
+    if frac < 0.58:
+        return "B2"
+    if frac < 0.82:
+        return "C1"
+    return "C2"
+
+
+def assign_usage_levels(rows: list[dict]) -> list[dict]:
+    ordered = sorted(rows, key=lambda row: (-(row.get("count") or 0), row.get("word") or ""))
+    total = len(ordered)
+    for index, row in enumerate(ordered):
+        row["level"] = level_for_rank(index, total)
+        row["freq"] = row.get("count") or 0
+    return ordered
 
 
 def keep_frequent(rows: list[dict], cap: int, min_count: int) -> list[dict]:
