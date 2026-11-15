@@ -24,6 +24,10 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from topics import classify, topic_levels  # noqa: E402
+from wordfreq import top_n_list, zipf_frequency  # noqa: E402
+
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
 OUT = ROOT / "data" / "vocab.json"
@@ -423,8 +427,10 @@ def gloss_candidates(entries: list[dict], word: str) -> list[tuple[int, int, str
     return found
 
 
-def pick_meaning(entries: list[dict], word: str, pos: str) -> tuple[str | None, list]:
+def pick_meaning(entries: list[dict], word: str, pos: str, require_diacritic: bool = False) -> tuple[str | None, list]:
     candidates = gloss_candidates(entries, word)
+    if require_diacritic:
+        candidates = [item for item in candidates if has_diacritic(item[2])]
     if not candidates:
         return None, []
     preferred = PREFER.get((word.lower(), pos), ())
@@ -512,7 +518,7 @@ def load_level_rows() -> list[dict]:
     return rows
 
 
-def load_wiktionary(lemmas: set[str]) -> dict[str, list[dict]]:
+def load_wiktionary(lemmas: set[str] | None) -> dict[str, list[dict]]:
     bank = defaultdict(list)
     parsed = 0
     with gzip.open(FILES["viwikt"], "rt", encoding="utf-8") as handle:
@@ -523,7 +529,9 @@ def load_wiktionary(lemmas: set[str]) -> dict[str, list[dict]]:
             if not match:
                 continue
             word = match.group(1)
-            if word.lower() not in lemmas:
+            if lemmas is not None and word.lower() not in lemmas:
+                continue
+            if re.search(r"[0-9_/]", word) or len(word) > 48:
                 continue
             try:
                 entry = json.loads(line)
@@ -541,19 +549,23 @@ def load_wiktionary(lemmas: set[str]) -> dict[str, list[dict]]:
             glosses = []
             for sense in entry.get("senses") or []:
                 sense_tags = set(sense.get("tags") or [])
-                if sense_tags & BAD_SENSE:
+                if sense_tags & BAD_SENSE or sense_tags & {"form-of", "alt-of"} or sense.get("form_of"):
                     continue
                 slang = bool(sense_tags & {"slang", "vulgar", "offensive"})
                 for gloss in sense.get("glosses") or []:
-                    if isinstance(gloss, str):
-                        glosses.append({"text": gloss, "slang": slang})
+                    if not isinstance(gloss, str):
+                        continue
+                    lowered = gloss.lower()
+                    if re.search(r"(dạng |số nhiều của|quá khứ của|phân từ của|ngôi thứ|so sánh hơn của|so sánh nhất của)", lowered):
+                        continue
+                    glosses.append({"text": gloss, "slang": slang})
             ipas = []
             for sound in entry.get("sounds") or []:
                 ipa = sound.get("ipa")
                 if isinstance(ipa, str):
                     ipas.append((ipa_rank(sound), ipa))
             if glosses or ipas:
-                bank[word.lower()].append({"pos": pos, "glosses": glosses, "ipas": ipas})
+                bank[word.lower()].append({"pos": pos, "glosses": glosses, "ipas": ipas, "word": word})
     print(f"wiktionary entries kept for CEFR lemmas: {parsed}; lemmas with data: {len(bank)}")
     return bank
 
@@ -641,31 +653,7 @@ def build_cards(rows: list[dict], bank: dict) -> list[dict]:
                 existing["also"].append(alt)
         existing["also"] = existing["also"][:2]
     print("unmatched or rejected", dict(missed))
-    built = []
-    used_ids = set()
-    for item in cards.values():
-        card_id = slug(item["word"], item["pos"])
-        if card_id in used_ids:
-            suffix = 2
-            while f"{card_id}-{suffix}" in used_ids:
-                suffix += 1
-            card_id = f"{card_id}-{suffix}"
-        used_ids.add(card_id)
-        card = {
-            "id": card_id,
-            "word": item["word"],
-            "pos": item["pos"],
-            "level": item["level"],
-            "meaning": item["meaning"],
-        }
-        if item["ipa"]:
-            card["ipa"] = item["ipa"]
-        if item["topics"]:
-            card["topics"] = item["topics"]
-        if item["also"]:
-            card["also"] = item["also"]
-        built.append(card)
-    return built
+    return cards
 
 
 def forms_of(lemma: str) -> set[str]:
@@ -803,6 +791,495 @@ def load_examples(cards: list[dict]) -> dict[str, dict]:
     return chosen
 
 
+# Zipf cutoffs for words that are NOT in CEFR-J or Octanove.
+# A1–B2 match the median frequency of those official bands.
+# C1 starts at 2.70, below the median of official C2 words (~2.9), so a
+# reasonably common word is C1 and only a rarer tail stays C2.
+ZIPF_LEVEL = (
+    (5.03, "A1"),
+    (4.58, "A2"),
+    (4.19, "B1"),
+    (3.77, "B2"),
+    (2.70, "C1"),
+)
+
+EXTRA_POS = ("noun", "verb", "adj", "adv")
+TARGET_CARDS = 43000
+MIN_CARDS = 40000
+SOURCE_DATE = "2026-11-14"
+EXTRA_PATH = ROOT / "data" / "extra-words.txt"
+WN_POS = {"noun": "n", "verb": "v", "adj": "a", "adv": "r"}
+BAD_WORD = {
+    "fuck", "fucking", "shit", "cunt", "nigger", "nigga", "faggot", "fag",
+    "bitch", "asshole", "slut", "whore", "dick", "porn", "rape", "rapist",
+    "cock", "pussy", "bastard",
+}
+BAD_DEF = (
+    "sexual intercourse", "obscene", "offensive term", "slur", "vulgar",
+    "a city in", "a town in", "capital and largest", "a river in",
+    "a state in", "a province", "surname", "given name",
+)
+
+
+def level_from_zipf(score: float) -> str:
+    for bound, level in ZIPF_LEVEL:
+        if score >= bound:
+            return level
+    return "C2"
+
+
+def official_levels() -> dict[tuple[str, str], str]:
+    """Easiest CEFR-J / Octanove level for each (lemma, pos)."""
+    found: dict[tuple[str, str], str] = {}
+    paths = [
+        (FILES["cefrj"], None),
+        (FILES["octanove"], {"C1", "C2"}),
+    ]
+    for path, allowed in paths:
+        if not path.exists():
+            continue
+        with path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                level = row.get("CEFR") or ""
+                if allowed and level not in allowed:
+                    continue
+                if level not in LEVEL_RANK:
+                    continue
+                pos = CEFR_POS.get((row.get("pos") or "").strip().lower())
+                if not pos:
+                    continue
+                for part in (row.get("headword") or "").split("/"):
+                    word = part.strip().lower()
+                    if not word:
+                        continue
+                    key = (word, pos)
+                    previous = found.get(key)
+                    if previous is None or LEVEL_RANK[level] < LEVEL_RANK[previous]:
+                        found[key] = level
+    return found
+
+
+def relevel_cards(cards: list[dict]) -> dict[str, int]:
+    """Keep official CEFR levels. Other cards follow ZIPF_LEVEL. Ids stay put."""
+    official = official_levels()
+    moved = {"official": 0, "frequency": 0, "changed": 0}
+    for card in cards:
+        key = (card["word"].lower(), card.get("pos") or "")
+        before = card.get("level")
+        if key in official:
+            card["level"] = official[key]
+            moved["official"] += 1
+        else:
+            card["level"] = level_from_zipf(zipf_frequency(card["word"].lower(), "en"))
+            moved["frequency"] += 1
+        if card["level"] != before:
+            moved["changed"] += 1
+    return moved
+
+
+def proper_nounish(original: str, score: float) -> bool:
+    if not original or original.lower() == "i":
+        return False
+    if original.isupper():
+        return False
+    return original[:1].isupper() and score < 4.2
+
+
+def tidy_english(text: str) -> str:
+    text = re.sub(r"\([^)]*\)", " ", text or "")
+    text = re.sub(r"\s+", " ", text).strip(" \t.;,")
+    if not text:
+        return ""
+    lowered = text.lower()
+    if any(bit in lowered for bit in BAD_DEF):
+        return ""
+    if len(text) > 110:
+        cut = text[:110]
+        space = cut.rfind(" ")
+        text = cut[:space] if space > 40 else cut
+        text = text.rstrip(" ,.;")
+    text = text[0].upper() + text[1:]
+    if text[-1] not in ".!?":
+        text += "."
+    return text
+
+
+def english_wordnet():
+    import wn
+    return wn.Wordnet("oewn:2024")
+
+
+def english_meaning(en, word: str, pos: str) -> str:
+    if word.lower() in BAD_WORD or len(word) < 3:
+        return ""
+    wanted = WN_POS.get(pos)
+    if not wanted:
+        return ""
+    found = []
+    for item in en.words(word.replace(" ", "_")):
+        if item.lemma().lower() != word.lower():
+            continue
+        if item.lemma()[:1].isupper():
+            return ""
+        if wanted == "a" and item.pos not in {"a", "s"}:
+            continue
+        if wanted != "a" and item.pos != wanted:
+            continue
+        found.append(item)
+    if not found:
+        return ""
+    for sense in found[0].senses()[:3]:
+        cleaned = tidy_english(sense.synset().definition() or "")
+        if cleaned and len(cleaned) >= 8:
+            return cleaned
+    return ""
+
+
+def add_frequency_cards(cards: dict, bank: dict) -> None:
+    ranked = top_n_list("en", 100000)
+    rank_of = {word: index for index, word in enumerate(ranked, start=1)}
+    en = english_wordnet()
+    gloss_cache: dict[tuple[str, str], str] = {}
+
+    def english_for(word: str, pos: str) -> str:
+        key = (word, pos)
+        if key not in gloss_cache:
+            gloss_cache[key] = english_meaning(en, word, pos)
+        return gloss_cache[key]
+
+    def consider(word: str, pos: str, score: float) -> None:
+        key = (word.lower(), pos)
+        if key in cards:
+            return
+        if word.lower() in BAD_WORD:
+            return
+        if len(word) < 3 and word.lower() not in {"a", "i"}:
+            return
+        entries = lookup(bank, word, pos)
+        original = (entries[0].get("word") if entries else word) or word
+        if proper_nounish(original, score):
+            return
+        meaning = ""
+        ipas: list = []
+        lang = "vi"
+        if entries:
+            meaning, ipas = pick_meaning(entries, word, pos, require_diacritic=True)
+        if not meaning:
+            meaning = english_for(word, pos)
+            lang = "en"
+            ipas = []
+        if not meaning:
+            return
+        shown = original
+        if shown.isupper() and len(shown) > 1:
+            shown = shown.lower()
+        if shown.lower() == "i":
+            shown = "I"
+        elif not (shown[:1].isupper() and score >= 4.2):
+            shown = shown.lower()
+        cards[key] = {
+            "word": display_word(shown),
+            "pos": pos,
+            "level": level_from_zipf(score),
+            "meaning": meaning,
+            "meaningLang": lang,
+            "ipa": pick_ipa(ipas) if ipas else None,
+            "topics": [],
+            "also": [],
+        }
+
+    for lemma in ranked:
+        if len(cards) >= TARGET_CARDS:
+            break
+        score = zipf_frequency(lemma, "en")
+        if score < 2.55 and len(cards) >= MIN_CARDS:
+            break
+        if " " in lemma or not re.fullmatch(r"[a-z][a-z'-]*", lemma):
+            continue
+        have = sum(1 for pos in EXTRA_POS if (lemma, pos) in cards)
+        for pos in EXTRA_POS:
+            if have >= 2:
+                break
+            if pos == "adv" and score < 3.6:
+                continue
+            before = (lemma, pos) in cards
+            consider(lemma, pos, score)
+            if not before and (lemma, pos) in cards:
+                have += 1
+
+    phrasal = []
+    for lemma, entries in bank.items():
+        if " " not in lemma:
+            continue
+        for entry in entries:
+            if not is_phrasal_lemma(lemma, entry["pos"]):
+                continue
+            score = zipf_frequency(lemma, "en")
+            head = zipf_frequency(lemma.split()[0], "en")
+            if score < 3.0 and head < 4.8:
+                continue
+            phrasal.append((max(score, head - 0.7), lemma, entry["pos"]))
+    phrasal.sort(reverse=True)
+    added = 0
+    for score, lemma, pos in phrasal:
+        if added >= 800:
+            break
+        key = (lemma, pos)
+        if key in cards:
+            continue
+        entries = lookup(bank, lemma, pos)
+        meaning, ipas = pick_meaning(entries, lemma, pos, require_diacritic=True)
+        if not meaning:
+            continue
+        cards[key] = {
+            "word": lemma,
+            "pos": pos,
+            "level": level_from_zipf(score),
+            "meaning": meaning,
+            "ipa": pick_ipa(ipas),
+            "topics": [],
+            "also": [],
+        }
+        added += 1
+    print(f"phrasal verbs added beyond the frequency pass: {added}; cards now {len(cards)}")
+    print("frequency rank sample", {n: rank_of.get(ranked[n - 1]) for n in (1000, 5000, 20000) if n <= len(ranked)})
+
+
+def is_phrasal_lemma(word: str, pos: str) -> bool:
+    if pos != "verb":
+        return False
+    parts = word.split()
+    particles = {
+        "up", "down", "out", "off", "on", "in", "over", "away", "back", "through",
+        "around", "about", "along", "apart", "by", "for", "into", "onto", "after",
+        "across", "ahead", "forward", "together", "aside", "round", "upon",
+    }
+    return 2 <= len(parts) <= 4 and parts[0].isalpha() and any(part in particles for part in parts[1:])
+
+
+def cards_from_table(table: dict) -> list[dict]:
+    built = []
+    used_ids = set()
+    for item in table.values():
+        card_id = slug(item["word"], item["pos"])
+        if card_id in used_ids:
+            suffix = 2
+            while f"{card_id}-{suffix}" in used_ids:
+                suffix += 1
+            card_id = f"{card_id}-{suffix}"
+        used_ids.add(card_id)
+        card = {
+            "id": card_id,
+            "word": item["word"],
+            "pos": item["pos"],
+            "level": item["level"],
+            "meaning": item["meaning"],
+        }
+        if item.get("meaningLang") == "en":
+            card["meaningLang"] = "en"
+        if item.get("ipa"):
+            card["ipa"] = item["ipa"]
+        if item.get("topics"):
+            card["topics"] = list(item["topics"])
+            card["_src"] = list(item["topics"])
+        if item.get("also"):
+            card["also"] = item["also"]
+        built.append(card)
+    return built
+
+
+def attach_images(cards: list[dict]) -> None:
+    path = RAW / "images.json"
+    if not path.exists():
+        return
+    images = json.loads(path.read_text(encoding="utf-8"))
+    used = 0
+    for card in cards:
+        word = card["word"].lower()
+        image = images.get(f"{word}|{card['pos']}") or images.get(word)
+        if image:
+            card["img"] = image
+            used += 1
+    print(f"attached images: {used}")
+
+
+def load_disk_cards() -> list[dict]:
+    found = []
+    seen = set()
+    paths = []
+    if OUT.exists():
+        paths.append(OUT)
+    paths.extend(sorted((ROOT / "data").glob("level-*.json")))
+    for path in paths:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for card in payload.get("cards") or []:
+            card_id = card.get("id")
+            if not card_id or card_id in seen:
+                continue
+            seen.add(card_id)
+            found.append(card)
+    return found
+
+
+def keep_old_cards(cards: list[dict], previous: list[dict]) -> list[dict]:
+    have = {card["id"] for card in cards}
+    missing = []
+    for card in previous:
+        if card.get("id") in have:
+            continue
+        kept = {
+            "id": card["id"],
+            "word": card["word"],
+            "pos": card["pos"],
+            "level": card["level"],
+            "meaning": card["meaning"],
+        }
+        for key in ("meaningLang", "ipa", "also", "example", "exampleVi", "tatoeba", "img", "emo"):
+            if card.get(key):
+                kept[key] = card[key]
+        if card.get("topics"):
+            kept["_src"] = list(card["topics"])
+        missing.append(kept)
+        have.add(card["id"])
+    if missing:
+        print(f"kept {len(missing)} previous cards that this build would have dropped")
+    return cards + missing
+
+
+def parse_extra_lines(text: str) -> list[dict]:
+    rows = []
+    for line in text.splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#"):
+            continue
+        parts = [part.strip() for part in raw.split("|")]
+        word = parts[0]
+        if not word or word.startswith("#"):
+            continue
+        rows.append({
+            "word": word,
+            "meaning": parts[1] if len(parts) > 1 else "",
+            "example": parts[2] if len(parts) > 2 else "",
+        })
+    return rows
+
+
+def merge_extra(cards: list[dict], bank: dict) -> None:
+    if not EXTRA_PATH.exists():
+        return
+    rows = parse_extra_lines(EXTRA_PATH.read_text(encoding="utf-8"))
+    if not rows:
+        print("extra-words.txt has no entries")
+        return
+    en = english_wordnet()
+    have_ids = {card["id"] for card in cards}
+    have_keys = {(card["word"].lower(), card["pos"]) for card in cards}
+    added = 0
+    for row in rows:
+        word = row["word"].strip()
+        if not re.fullmatch(r"[A-Za-z][A-Za-z' -]{0,40}", word):
+            print("skip extra word", word)
+            continue
+        pos = "noun"
+        for item in en.words(word.lower().replace(" ", "_")):
+            mapped = {"n": "noun", "v": "verb", "a": "adj", "s": "adj", "r": "adv"}.get(item.pos)
+            if mapped and item.lemma().lower() == word.lower():
+                pos = mapped
+                break
+        if (word.lower(), pos) in have_keys:
+            continue
+        card_id = slug(word, pos)
+        if card_id in have_ids:
+            continue
+        supplied = row["meaning"]
+        if supplied and has_diacritic(supplied):
+            meaning, lang = nice_meaning(supplied), "vi"
+        elif supplied:
+            meaning, lang = tidy_english(supplied) or supplied[:110], "en"
+        else:
+            entries = lookup(bank, word, pos)
+            meaning, ipas = pick_meaning(entries, word, pos, require_diacritic=True) if entries else (None, [])
+            lang = "vi"
+            if not meaning:
+                meaning = english_meaning(en, word.lower(), pos)
+                lang = "en"
+                ipas = []
+            else:
+                ipas = ipas
+        if not meaning:
+            print("skip extra word without a meaning", word)
+            continue
+        score = zipf_frequency(word.lower(), "en")
+        card = {
+            "id": card_id,
+            "word": display_word(word if word.lower() != "i" else "I"),
+            "pos": pos,
+            "level": level_from_zipf(score) if score else "B2",
+            "meaning": meaning,
+        }
+        if lang == "en":
+            card["meaningLang"] = "en"
+        entries = lookup(bank, word, pos)
+        if entries:
+            ipa = pick_ipa(entries[0].get("ipas") or [])
+            if ipa:
+                card["ipa"] = ipa
+        if row["example"]:
+            card["example"] = row["example"][:300]
+        cards.append(card)
+        have_ids.add(card_id)
+        have_keys.add((word.lower(), pos))
+        added += 1
+    print(f"extra words added: {added}")
+
+
+def write_outputs(cards: list[dict], topics: list[dict]) -> None:
+    cards.sort(key=lambda card: (LEVEL_RANK[card["level"]], card["word"].lower(), card["pos"]))
+    counts = {level: 0 for level in LEVEL_RANK}
+    ipa_n = example_n = image_n = vi_n = en_n = 0
+    image_counts = {level: 0 for level in LEVEL_RANK}
+    by_level = {level: [] for level in LEVEL_RANK}
+    for card in cards:
+        counts[card["level"]] += 1
+        ipa_n += "ipa" in card
+        example_n += "example" in card
+        if card.get("meaningLang") == "en":
+            en_n += 1
+        else:
+            vi_n += 1
+        if card.get("img") or card.get("emo"):
+            image_n += 1
+            image_counts[card["level"]] += 1
+        by_level[card["level"]].append(card)
+    data_dir = ROOT / "data"
+    for level, group in by_level.items():
+        path = data_dir / f"level-{level.lower()}.json"
+        path.write_text(json.dumps({"cards": group}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        print(f"wrote {path.name} {len(group)} cards {path.stat().st_size} bytes")
+    levels_table = topic_levels(cards)
+    meta = {
+        "generated": SOURCE_DATE,
+        "counts": counts,
+        "total": len(cards),
+        "withVi": vi_n,
+        "withEn": en_n,
+        "withIpa": ipa_n,
+        "withExample": example_n,
+        "withImage": image_n,
+        "imageCounts": image_counts,
+        "levels": list(LEVEL_RANK),
+        "topics": topics,
+        "topicLevels": levels_table,
+    }
+    meta_path = data_dir / "meta.json"
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    if OUT.exists():
+        OUT.unlink()
+    print(f"wrote {meta_path.name}")
+    print("counts", counts, "total", len(cards), "ipa", ipa_n, "examples", example_n, "images", image_n)
+    print("topics", [(item["id"], item["count"]) for item in topics])
+
+
 def prune_topics(cards: list[dict]) -> list[dict]:
     counts = defaultdict(int)
     for card in cards:
@@ -820,12 +1297,28 @@ def prune_topics(cards: list[dict]) -> list[dict]:
 
 
 def main() -> None:
+    previous = load_disk_cards()
+    previous_ids = {card["id"] for card in previous}
+    commons = {
+        card["id"]: card["img"]
+        for card in previous
+        if (card.get("img") or {}).get("t") == "c"
+    }
     for key, url in SOURCES.items():
         download(url, FILES[key])
     rows = load_level_rows()
     print(f"level rows: {len(rows)}")
-    bank = load_wiktionary(wanted_lemmas(rows))
-    cards = build_cards(rows, bank)
+    bank = load_wiktionary(None)
+    table = build_cards(rows, bank)
+    print(f"cefr cards: {len(table)}")
+    add_frequency_cards(table, bank)
+    cards = cards_from_table(table)
+    cards = keep_old_cards(cards, previous)
+    merge_extra(cards, bank)
+    for card in cards:
+        saved = commons.get(card["id"])
+        if saved:
+            card["img"] = saved
     examples = load_examples(cards)
     for card in cards:
         example = examples.get(card["id"])
@@ -837,45 +1330,32 @@ def main() -> None:
         if example.get("author"):
             ref["author"] = example["author"]
         card["tatoeba"] = ref
-    topics = prune_topics(cards)
-    cards.sort(key=lambda card: (LEVEL_RANK[card["level"]], card["word"].lower(), card["pos"]))
-    counts = {level: 0 for level in LEVEL_RANK}
-    ipa_n = example_n = 0
-    for card in cards:
-        counts[card["level"]] += 1
-        ipa_n += "ipa" in card
-        example_n += "example" in card
-    payload = {
-        "generated": date.today().isoformat(),
-        "counts": counts,
-        "total": len(cards),
-        "withIpa": ipa_n,
-        "withExample": example_n,
-        "levels": list(LEVEL_RANK),
-        "topics": topics,
-        "cards": cards,
-    }
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
-    print("counts", counts, "total", len(cards), "ipa", ipa_n, "examples", example_n)
-    print("topics", [(item["id"], item["count"]) for item in topics])
-    # Spot-check a few familiar lemmas and a slice of each level.
+    print("classifying topics...")
+    topics = classify(cards)
+    moved = relevel_cards(cards)
+    print("relevel", moved)
+    write_outputs(cards, topics)
     wanted = {"abandon", "apple", "water", "development", "beautiful", "because", "run", "significant"}
     print("--- spot check ---")
     for card in cards:
         if card["word"].lower() in wanted:
-            print(card["level"], card["pos"], card["word"], card.get("ipa"), "|", card["meaning"][:90])
-    by_level = defaultdict(list)
-    for card in cards:
-        by_level[card["level"]].append(card)
-    print("--- samples ---")
-    for level, group in by_level.items():
-        step = max(1, len(group) // 5)
-        for card in group[::step][:5]:
-            print(f"{level}\t{card['word']}\t{card['pos']}\t{card['meaning'][:70]}")
-    if len(cards) < 1500 or counts["B1"] < 400 or counts["B2"] < 400:
-        print("ERROR: coverage below the first-version target", file=sys.stderr)
+            print(card["level"], card["pos"], card["id"], card["word"], card.get("ipa"), "|", card["meaning"][:80], card.get("topics"))
+    have = {card["id"] for card in cards}
+    missing = sorted(previous_ids - have)
+    print(f"previous ids missing: {len(missing)}")
+    if missing[:12]:
+        print(" missing sample", missing[:12])
+    if missing:
+        print("ERROR: previous card ids disappeared", file=sys.stderr)
+        sys.exit(1)
+    en_n = sum(1 for card in cards if card.get("meaningLang") == "en")
+    print(f"vietnamese {len(cards) - en_n} english-only {en_n}")
+    counts = {level: sum(1 for card in cards if card["level"] == level) for level in LEVEL_RANK}
+    if len(cards) < MIN_CARDS or counts["B1"] < 400 or counts["B2"] < 400:
+        print("ERROR: coverage below target", counts, len(cards), file=sys.stderr)
+        sys.exit(1)
+    if len(topics) < 40:
+        print("ERROR: fewer than 40 topics", file=sys.stderr)
         sys.exit(1)
 
 
