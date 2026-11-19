@@ -2,6 +2,7 @@
    A failed card is shown once more in the same session; the stored grade stays the first answer. */
 
 import { accountEnabled, bindAccount, currentUser, scheduleSync, signInGoogle, signOutGoogle } from "./account.js";
+import { AI_MESSAGES, getAiNote, mergeRemoteNotes, saveEditedNote, writeWithAi } from "./ai.js";
 import {
   STREAK_MIN,   EXTRA_STEP, NEW_LIMITS, calendarKind, earliestStudyDay, extraToday,
   medalValues, newCap, normalizeNewPerDay, shareLink, slotsLeft, streakFromLog, unlockTarget,
@@ -340,7 +341,11 @@ function cleanOwn(list) {
       meaning,
       pos: POS_VI[item.pos] ? item.pos : "",
       example: String(item.example || "").trim().slice(0, 300),
+      exampleVi: String(item.exampleVi || "").trim().slice(0, 300),
+      explain: String(item.explain || "").replace(/<[^>]*>/g, "").replace(/[<>]/g, "").trim().slice(0, 280),
       icon: icon || "",
+      ai: item.ai === true,
+      level: LEVELS.includes(item.level) ? item.level : "",
     });
   }
   return out;
@@ -351,10 +356,13 @@ function ownAsCards() {
     id: item.id,
     word: item.word,
     pos: item.pos || "",
-    level: "A1",
+    level: item.level || "A2",
     meaning: item.meaning,
     example: item.example || "",
+    exampleVi: item.exampleVi || "",
+    explain: item.explain || "",
     own: true,
+    ai: item.ai === true,
     icon: item.icon || "",
     topics: [],
   }));
@@ -366,6 +374,7 @@ function pool() {
 }
 
 function reindex() {
+  primaryIds = null;
   INDEX = new Map(DATA.cards.map((card) => [card.id, card]));
   for (const card of ownAsCards()) INDEX.set(card.id, card);
 }
@@ -497,6 +506,7 @@ function picKey(pic) {
 function imageUrl(img) {
   if (!img) return "";
   const kind = img.s || img.t;
+  if (kind === "o" && img.local && img.h) return `assets/openmoji/${encodeURIComponent(String(img.h).toUpperCase())}.svg`;
   if ((kind === "o") && img.h) return `${OPENMOJI_SVG}${encodeURIComponent(img.h)}.svg`;
   if (kind === "c" && img.f) {
     return `https://commons.wikimedia.org/wiki/Special:FilePath/${encodeURIComponent(img.f)}?width=320`;
@@ -532,6 +542,26 @@ function imageCredit(img) {
   return `${who} · <a href="${esc(lic[1])}" target="_blank" rel="noopener">${esc(lic[0])}</a> · <a href="${file}" target="_blank" rel="noopener">Wikimedia Commons</a>`;
 }
 
+function emojiToHex(value) {
+  const parts = [];
+  for (const char of String(value || "")) {
+    const code = char.codePointAt(0);
+    if (code === 0xfe0f || code === 0x200d) {
+      if (code === 0x200d) parts.push("200D");
+      continue;
+    }
+    parts.push(code.toString(16).toUpperCase());
+  }
+  return parts.filter(Boolean).join("-");
+}
+
+function localIconHex(card) {
+  const mapped = ICONS[String(card.word || "").toLowerCase()];
+  if (mapped && /^[0-9A-F]+(-[0-9A-F]+)*$/i.test(mapped)) return mapped.toUpperCase();
+  if (card.icon) return emojiToHex(card.icon);
+  return "";
+}
+
 function pictureChoices(card) {
   const all = [];
   const seen = new Set();
@@ -541,6 +571,8 @@ function pictureChoices(card) {
     seen.add(key);
     all.push(pic);
   };
+  const localHex = localIconHex(card);
+  if (localHex) push({ s: "o", h: localHex, local: true });
   if (card.img && card.img.t === "c" && card.img.f) {
     push({ s: "c", f: card.img.f, a: card.img.a || "", l: card.img.l || "", lead: card.img.lead === true });
   }
@@ -568,9 +600,10 @@ function orderedPics(card) {
   else if (style === "photo") list = all.filter((pic) => pic.s === "c");
   else {
     const lead = all.filter((pic) => pic.s === "c" && pic.lead);
-    const emoji = all.filter((pic) => pic.s !== "c");
+    const local = all.filter((pic) => pic.local);
+    const emoji = all.filter((pic) => pic.s !== "c" && !pic.local);
     const weak = all.filter((pic) => pic.s === "c" && !pic.lead);
-    list = lead.concat(emoji, weak);
+    list = lead.concat(local, emoji, weak);
   }
   if (!list.length) list = all;
   const saved = picPrefs[card.id];
@@ -655,10 +688,34 @@ function topicName(id) {
   return found ? found.name : id;
 }
 
+const POS_RANK = { noun: 0, verb: 1, adj: 2, adv: 3, phrase: 4 };
+let primaryIds = null;
+
+function primaryCardIds() {
+  if (primaryIds) return primaryIds;
+  const groups = new Map();
+  for (const card of DATA.cards) {
+    const key = String(card.word || "").toLowerCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(card);
+  }
+  primaryIds = new Set();
+  for (const list of groups.values()) {
+    list.sort((a, b) => (
+      LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level)
+      || (POS_RANK[a.pos] ?? 9) - (POS_RANK[b.pos] ?? 9)
+    ));
+    primaryIds.add(list[0].id);
+  }
+  return primaryIds;
+}
+
 function inDeck(card) {
   if (card.own) return STATE.settings.ownDeck !== false;
   const settings = STATE.settings;
   if (!settings.levels.includes(card.level)) return false;
+  const word = String(card.word || "");
+  if (word && !word.includes(" ") && !primaryCardIds().has(card.id)) return false;
   if (!settings.topics.length) return true;
   return (card.topics || []).some((id) => settings.topics.includes(id));
 }
@@ -816,9 +873,41 @@ function currentItem() {
   return null;
 }
 
+function withAi(card) {
+  if (!card) return card;
+  const note = getAiNote(card.word);
+  if (!note) return card;
+  const next = { ...card, ai: true, explain: note.explain || card.explain || "" };
+  if (!next.meaning || next.meaningLang === "en") {
+    next.meaning = note.meaning;
+    delete next.meaningLang;
+  }
+  const first = (note.examples || [])[0];
+  const second = (note.examples || [])[1];
+  if (!next.example && first) {
+    next.example = first.en;
+    next.exampleVi = first.vi;
+  }
+  if (second && !next.example2) {
+    next.example2 = second.en;
+    next.example2Vi = second.vi;
+  }
+  if (!next.ipa && note.ipa) next.ipa = note.ipa;
+  if (!next.icon && note.emoji) next.icon = note.emoji;
+  if (note.level && next.own) next.level = note.level;
+  return next;
+}
+
+function needsHelp(card) {
+  if (!card || getAiNote(card.word) || card.ai) return false;
+  if (!card.meaning || card.meaningLang === "en" || !card.example) return true;
+  return false;
+}
+
 function currentCard() {
   const item = currentItem();
-  return item ? INDEX.get(item.id) : null;
+  const card = item ? INDEX.get(item.id) : null;
+  return card ? withAi(card) : null;
 }
 
 function applySm2(id, quality) {
@@ -985,7 +1074,7 @@ function pumpToast() {
     node.classList.remove("celebrate");
     toastOn = false;
     pumpToast();
-  }, 2200);
+  }, 4000);
 }
 
 function speakerButton() {
@@ -1026,6 +1115,8 @@ function cardFaces(card, item) {
     example = `<div class="example">
       <p class="ex-en">${esc(card.example)}</p>
       ${card.exampleVi ? `<p class="ex-vi">${esc(card.exampleVi)}</p>` : ""}
+      ${card.example2 ? `<p class="ex-en extra">${esc(card.example2)}</p>` : ""}
+      ${card.example2Vi ? `<p class="ex-vi">${esc(card.example2Vi)}</p>` : ""}
       ${link ? `<p class="creditline">${link}</p>` : ""}
     </div>`;
   }
@@ -1045,8 +1136,12 @@ function cardFaces(card, item) {
       ${speakerButton()}
       <div class="pillrow"><span class="pill">${esc(meta)}</span>${retry}</div>
       <div class="wordwrap">
+        ${card.ai ? `<p class="ai-label">AI viết</p>` : ""}
         ${meaningHtml(card)}
+        ${card.explain ? `<p class="explain">${esc(card.explain)}</p>` : ""}
         ${example}
+        ${needsHelp(card) ? `<button type="button" class="ghost ai-btn" data-act="ai-write" data-word="${esc(card.word)}">Nhờ AI viết</button>` : ""}
+        ${card.ai ? `<button type="button" class="ghost ai-btn" data-act="ai-edit" data-word="${esc(card.word)}">Sửa chữ AI</button>` : ""}
       </div>
     </div>`;
 }
@@ -1068,6 +1163,8 @@ function fillCard() {
   const node = document.getElementById("card");
   if (!card || !node) return;
   node.classList.remove("is-flipped");
+  node.classList.add("is-settled");
+  node.dataset.id = card.id;
   node.innerHTML = cardFaces(card, item);
   bindPicture(node);
   updateStudyChrome();
@@ -1551,9 +1648,12 @@ function builtinMatches(word) {
     if (seen.has(card.meaning)) continue;
     seen.add(card.meaning);
     out.push(card);
-    if (out.length >= 3) break;
   }
-  return out;
+  out.sort((a, b) => (
+    LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level)
+    || (POS_RANK[a.pos] ?? 9) - (POS_RANK[b.pos] ?? 9)
+  ));
+  return out.slice(0, 3);
 }
 
 function prefillHtml(word) {
@@ -1564,20 +1664,51 @@ function prefillHtml(word) {
   return `<div class="prefill"><p>Từ này có trong bộ sẵn.</p>${buttons}</div>`;
 }
 
-function renderForm() {
-  const current = (STATE.own || []).find((item) => item.id === editingId) || {
-    word: "", meaning: "", pos: "", example: "", icon: "",
+let aiEditWord = "";
+
+function noteToFields(note) {
+  const first = (note.examples || [])[0] || {};
+  return {
+    word: note.word || "",
+    meaning: note.meaning || "",
+    pos: note.pos || "",
+    example: first.en || "",
+    exampleVi: first.vi || "",
+    explain: note.explain || "",
+    icon: note.emoji || "",
   };
-  main.innerHTML = `<form class="composer" id="word-form" data-id="${esc(editingId)}">
-    <h1>${editingId ? "Sửa từ" : "Thêm từ"}</h1>
-    <p>Từ được lưu trong bộ <strong>Từ của tôi</strong> trên máy này và ôn cùng lịch SM-2.</p>
-    <label>Từ tiếng Anh<input name="word" required maxlength="80" autocomplete="off" autocapitalize="off" value="${esc(current.word)}"></label>
+}
+
+function renderForm() {
+  const own = editingId ? (STATE.own || []).find((item) => item.id === editingId) : null;
+  const ownByWord = aiEditWord
+    ? (STATE.own || []).find((item) => item.word.toLowerCase() === aiEditWord.toLowerCase())
+    : null;
+  const cached = aiEditWord ? getAiNote(aiEditWord) : null;
+  const note = !own && aiEditWord ? (cached || (ownByWord ? {
+    word: ownByWord.word,
+    meaning: ownByWord.meaning,
+    explain: ownByWord.explain,
+    pos: ownByWord.pos,
+    emoji: ownByWord.icon,
+    examples: [{ en: ownByWord.example || "", vi: ownByWord.exampleVi || "" }],
+  } : null)) : null;
+  const current = own || (note ? noteToFields(note) : {
+    word: "", meaning: "", pos: "", example: "", exampleVi: "", explain: "", icon: "",
+  });
+  main.innerHTML = `<form class="composer" id="word-form" data-id="${esc(editingId)}" data-ai-word="${esc(aiEditWord)}">
+    <h1>${editingId || aiEditWord ? "Sửa từ" : "Thêm từ"}</h1>
+    <p>Từ được lưu trong bộ <strong>Từ của tôi</strong> trên máy này và ôn cùng lịch SM-2. Nếu từ chưa có trong bộ, bạn có thể nhờ AI viết nghĩa và ví dụ, rồi sửa lại trước khi lưu.</p>
+    <label>Từ tiếng Anh<input name="word" required maxlength="80" autocomplete="off" autocapitalize="off" value="${esc(current.word)}" ${aiEditWord ? "readonly" : ""}></label>
     ${prefillHtml(current.word)}
-    <label>Nghĩa tiếng Việt<textarea name="meaning" required maxlength="240">${esc(current.meaning)}</textarea></label>
+    <button type="button" class="ghost ai-btn" data-act="ai-fill">Nhờ AI viết</button>
+    <label>Nghĩa tiếng Việt<textarea name="meaning" maxlength="240">${esc(current.meaning)}</textarea></label>
+    <label>Cách dùng<textarea name="explain" maxlength="280">${esc(current.explain || "")}</textarea></label>
     <label>Từ loại<select name="pos">${posOptions(current.pos)}</select></label>
-    <label>Câu ví dụ<input name="example" maxlength="300" value="${esc(current.example)}"></label>
+    <label>Câu ví dụ tiếng Anh<input name="example" maxlength="300" value="${esc(current.example)}"></label>
+    <label>Nghĩa câu ví dụ<input name="exampleVi" maxlength="300" value="${esc(current.exampleVi || "")}"></label>
     <label>Biểu tượng<input name="icon" maxlength="16" value="${esc(current.icon)}" placeholder="Ví dụ một emoji"></label>
-    <button type="submit" class="primary">${editingId ? "Lưu sửa" : "Lưu vào bộ của tôi"}</button>
+    <button type="submit" class="primary">${editingId || aiEditWord ? "Lưu sửa" : "Lưu vào bộ của tôi"}</button>
     <button type="button" class="ghost" data-act="close-form">Huỷ</button>
   </form>`;
   topmeta.textContent = "Từ của tôi";
@@ -1599,15 +1730,58 @@ function updatePrefill(form) {
 
 function openForm(id) {
   editingId = id || "";
+  aiEditWord = "";
   returnView = view === "form" ? returnView : view;
   view = "form";
   render();
 }
 
-function saveOwn(form) {
+function fillForm(form, note) {
+  const fields = noteToFields(note);
+  form.elements.meaning.value = fields.meaning;
+  form.elements.explain.value = fields.explain;
+  if (fields.pos && form.elements.pos.querySelector(`option[value="${fields.pos}"]`)) form.elements.pos.value = fields.pos;
+  form.elements.example.value = fields.example;
+  form.elements.exampleVi.value = fields.exampleVi;
+  if (fields.icon) form.elements.icon.value = fields.icon;
+}
+
+function applyNoteToOwn(note) {
+  const item = (STATE.own || []).find((entry) => entry.word.toLowerCase() === note.word.toLowerCase());
+  if (!item) return;
+  const fields = noteToFields(note);
+  item.meaning = fields.meaning;
+  item.explain = fields.explain;
+  item.pos = fields.pos || item.pos;
+  item.example = fields.example;
+  item.exampleVi = fields.exampleVi;
+  item.icon = fields.icon || item.icon;
+  item.ai = true;
+  if (note.level) item.level = note.level;
+}
+
+async function saveOwn(form) {
   const word = form.elements.word.value.trim();
-  const meaning = form.elements.meaning.value.trim();
-  if (!word || !meaning) return;
+  let meaning = form.elements.meaning.value.trim();
+  if (!word) return;
+  const aiWord = form.dataset.aiWord || "";
+  if (!meaning && !aiWord && !builtinMatches(word).length) {
+    const result = await writeWithAi(word);
+    if (!result.ok) {
+      toast(AI_MESSAGES[result.reason] || AI_MESSAGES.bad);
+      return;
+    }
+    fillForm(form, result.note);
+    meaning = result.note.meaning;
+  }
+  if (!meaning) {
+    const match = builtinMatches(word)[0];
+    if (match) meaning = match.meaning;
+  }
+  if (!meaning) {
+    toast("Nhập nghĩa tiếng Việt, hoặc bấm Nhờ AI viết.");
+    return;
+  }
   const icon = cleanIcon(form.elements.icon.value);
   if (form.elements.icon.value.trim() && icon == null) {
     toast("Biểu tượng chỉ dùng emoji");
@@ -1615,25 +1789,49 @@ function saveOwn(form) {
   }
   const pos = POS_VI[form.elements.pos.value] ? form.elements.pos.value : "";
   const example = form.elements.example.value.trim().slice(0, 300);
+  const exampleVi = form.elements.exampleVi.value.trim().slice(0, 300);
+  const explain = form.elements.explain.value.replace(/<[^>]*>/g, "").replace(/[<>]/g, "").trim().slice(0, 280);
+  if (aiWord) {
+    const prev = getAiNote(aiWord) || { word: aiWord };
+    await saveEditedNote({
+      ...prev,
+      word: aiWord,
+      meaning: meaning.slice(0, 180),
+      explain,
+      pos,
+      emoji: icon || prev.emoji || "",
+      examples: [{ en: example, vi: exampleVi }, ...((prev.examples || []).slice(1))],
+    });
+    aiEditWord = "";
+    toast("Đã sửa chữ AI");
+    view = returnView || "study";
+    render();
+    return;
+  }
   const id = form.dataset.id || "";
   const dup = (STATE.own || []).find((item) => item.word.toLowerCase() === word.toLowerCase() && item.id !== id);
   if (dup) {
     toast("Từ này đã có trong Từ của tôi");
     return;
   }
+  const fromAi = !!getAiNote(word);
+  const fields = {
+    word: word.slice(0, 80),
+    meaning: meaning.slice(0, 240),
+    pos,
+    example,
+    exampleVi,
+    explain,
+    icon: icon || "",
+    ai: fromAi,
+    level: (getAiNote(word) || {}).level || "",
+  };
   if (id) {
     const item = STATE.own.find((entry) => entry.id === id);
     if (!item) return;
-    Object.assign(item, { word: word.slice(0, 80), meaning: meaning.slice(0, 240), pos, example, icon: icon || "" });
+    Object.assign(item, fields);
   } else {
-    STATE.own.push({
-      id: newOwnId(),
-      word: word.slice(0, 80),
-      meaning: meaning.slice(0, 240),
-      pos,
-      example,
-      icon: icon || "",
-    });
+    STATE.own.push({ id: newOwnId(), ...fields });
     bumpAdded();
     STATE.settings.ownDeck = true;
   }
@@ -1922,7 +2120,7 @@ function renderCredits() {
     <article class="source">
       <div class="badge">CC BY-SA 4.0</div>
       <h2>OpenMoji</h2>
-      <p>Minh họa trên một số thẻ. Phiên bản 17.0.0. Từng hình ghi tên người vẽ trên nút i của thẻ. Giấy phép Creative Commons Ghi công – Chia sẻ tương tự 4.0.</p>
+      <p>Bộ icon của thẻ. Phiên bản 17.0.0, giấy phép Creative Commons Ghi công – Chia sẻ tương tự 4.0. Chỉ những SVG được dùng mới nằm trong app (<code>assets/openmoji/</code>). Từ không khớp chắc thì không có icon, để tránh gán nhầm. Việc ghép từ với emoji còn dựa trên chú thích và từ khóa của Unicode CLDR Annotations (tiếng Anh), theo Unicode License. Từ do AI thêm hiện SVG OpenMoji của emoji đó nếu có trong bộ, không thì hiện emoji của máy.</p>
       <p><a href="https://openmoji.org/" target="_blank" rel="noopener">openmoji.org</a> ·
       <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></p>
     </article>
@@ -2346,7 +2544,11 @@ function grade(know) {
 function flip() {
   const card = document.getElementById("card");
   if (!card) return;
+  card.classList.remove("is-settled");
   card.classList.toggle("is-flipped");
+  const settle = () => card.classList.add("is-settled");
+  card.addEventListener("transitionend", settle, { once: true });
+  window.setTimeout(settle, 480);
   const word = currentCard();
   if (word) autoSpeak(word, "flip");
 }
@@ -2618,7 +2820,7 @@ document.addEventListener("touchmove", (event) => {
   if (event.cancelable) event.preventDefault();
 }, { passive: false });
 
-document.addEventListener("click", (event) => {
+document.addEventListener("click", async (event) => {
   const nav = event.target.closest("[data-nav]");
   if (nav) {
     if (!DATA) return;
@@ -2852,8 +3054,35 @@ document.addEventListener("click", (event) => {
     render();
   }
   if (name === "close-form") {
+    aiEditWord = "";
     view = returnView || "decks";
     render();
+  }
+  if (name === "ai-fill" || name === "ai-write" || name === "ai-edit") {
+    if (name === "ai-edit") {
+      aiEditWord = act.dataset.word || "";
+      editingId = "";
+      returnView = view;
+      view = "form";
+      render();
+      return;
+    }
+    const form = act.closest("form");
+    const word = (form && form.elements.word && form.elements.word.value) || act.dataset.word || "";
+    const result = await writeWithAi(word);
+    if (!result.ok) {
+      toast(AI_MESSAGES[result.reason] || AI_MESSAGES.bad);
+      return;
+    }
+    if (form) fillForm(form, result.note);
+    else {
+      applyNoteToOwn(result.note);
+      reindex();
+      save();
+      render();
+    }
+    toast(result.cached ? "Đã có bản AI trên máy." : "AI đã viết. Bạn có thể sửa trước khi lưu.");
+    return;
   }
   if (name === "prefill") {
     const form = act.closest("form");
@@ -2887,7 +3116,7 @@ document.addEventListener("submit", (event) => {
   const form = event.target;
   if (!form || form.id !== "word-form") return;
   event.preventDefault();
-  saveOwn(form);
+  saveOwn(form).catch(() => toast(AI_MESSAGES.unavailable));
 });
 
 document.addEventListener("submit", (event) => {
@@ -2978,6 +3207,7 @@ async function boot() {
         };
       },
       today: todayISO,
+      onAi(notes) { mergeRemoteNotes(notes); },
       apply(next) {
         const settings = { ...STATE.settings, ...(next.settings || {}) };
         settings.levels = (settings.levels || []).filter((level) => LEVELS.includes(level));

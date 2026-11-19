@@ -49,3 +49,17 @@ Luật này nghĩa là: mỗi người chỉ đọc và ghi được `users/{ch�
 Nếu ô trong `js/firebase-config.js` để trống, app không gọi Firebase và không báo lỗi. Nút vẫn là **Chưa bật đăng nhập**.
 
 Gói Spark có hạn mức đọc/ghi mỗi ngày. FlashFree chỉ ghi sau khi bạn học (gom khoảng một giây), và chia tiến độ thẻ thành nhiều mảnh nhỏ để không vượt 1 MB mỗi tài liệu. Không cần nâng lên gói trả phí cho việc học cá nhân.
+
+## 7. Bật AI Logic (Gemini, miễn phí)
+
+App nhờ Gemini viết nghĩa và ví dụ cho từ chưa có trong bộ. Chỉ người đã đăng nhập mới gọi được, và mỗi máy được khoảng 30 từ mỗi ngày. Không thêm khóa API mới vào repo: app dùng cấu hình web sẵn có.
+
+1. Mở https://console.firebase.google.com/ và chọn dự án **flashfree-9971e**.
+2. Menu bên trái: **Build** → **AI Logic** (có bản giao diện ghi **Firebase AI Logic** hoặc **Gemini**).
+3. Bấm **Get started** / **Bắt đầu**.
+4. Khi được chọn nền, chọn **Gemini Developer API**. Đừng chọn **Vertex AI Gemini API** (cách đó gắn với Google Cloud và có thể yêu cầu thanh toán). Gemini Developer API là lựa chọn chạy được trên gói **Spark**.
+5. Làm theo ô xác nhận để bật API. Nếu trang hỏi đồng ý điều khoản của Gemini Developer API, bấm đồng ý. Không cần tạo khóa mới và dán vào code.
+6. Nếu Firestore đã xuất bản luật cũ, mở **Firestore → Rules**, dán lại toàn bộ `firestore.rules` trong repo (đã có `match /ai/{wordId}`), rồi **Publish**.
+7. Mở trang web, đăng nhập bằng Google, thêm một từ chưa có trong bộ và bấm **Nhờ AI viết**.
+
+Nếu chưa bấm bước 4, app báo: «Chưa bật AI Logic trên Firebase, hoặc dịch vụ chưa trả lời.» Học các thẻ sẵn vẫn bình thường.

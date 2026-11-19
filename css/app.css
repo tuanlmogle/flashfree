@@ -352,8 +352,19 @@ html.is-card-study .study a {
     radial-gradient(90% 60% at 100% 0%, var(--front-glow) 0%, var(--paper) 60%);
 }
 .back { transform: rotateY(180deg); }
-.card:not(.is-flipped) .back,
-.card.is-flipped .front { pointer-events: none; }
+/* The face that is turned away still sits in the hit-test box under
+   preserve-3d, so a tap on the back lands on the front. Hide it from
+   the pointer once the flip has settled. */
+.card.is-settled:not(.is-flipped) .back,
+.card.is-settled.is-flipped .front {
+  visibility: hidden;
+  display: none;
+  pointer-events: none;
+}
+.card.is-settled:not(.is-flipped) .front,
+.card.is-settled.is-flipped .back {
+  pointer-events: auto;
+}
 .speak {
   align-self: flex-end;
   width: 44px;
@@ -463,6 +474,21 @@ html.is-card-study .study a {
   line-height: 1;
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
+.ai-label {
+  display: inline-block;
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a4b12;
+  background: #f8e7cf;
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.explain { margin: 8px 0 0; color: var(--text-soft); font-size: 0.95rem; }
+.ex-en.extra { margin-top: 10px; }
+.ai-btn { margin-top: 10px; }
 .word {
   font-family: var(--serif);
   font-weight: 640;

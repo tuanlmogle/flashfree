@@ -20,6 +20,10 @@ export function accountEnabled() {
   return firebaseReady();
 }
 
+export function firebaseCdn() {
+  return CDN;
+}
+
 export function currentUser() {
   return user;
 }
@@ -83,6 +87,36 @@ async function bootOnce() {
     console.error(error);
   }
   return true;
+}
+
+export async function ensureFirebaseApp() {
+  if (!firebaseReady()) return null;
+  try {
+    await boot();
+  } catch {
+    return null;
+  }
+  const { getApps } = await import(`${CDN}/firebase-app.js`);
+  return getApps()[0] || null;
+}
+
+export async function saveAiNote(id, note) {
+  if (!db || !user || !id || !note) return;
+  const { doc, setDoc } = await import(`${CDN}/firebase-firestore.js`);
+  const data = {};
+  for (const key of ["word", "pos", "ipa", "meaning", "explain", "level", "examples", "emoji", "at"]) {
+    if (note[key] !== undefined) data[key] = note[key];
+  }
+  await setDoc(doc(db, "users", user.uid, "ai", String(id).slice(0, 60)), data);
+}
+
+export async function loadAiNotes() {
+  if (!db || !user) return [];
+  const { getDocs, collection } = await import(`${CDN}/firebase-firestore.js`);
+  const snap = await getDocs(collection(db, "users", user.uid, "ai"));
+  const out = [];
+  snap.forEach((item) => out.push(item.data() || {}));
+  return out;
 }
 
 export function publicUser() {
@@ -177,6 +211,9 @@ async function syncDown() {
     }, hooks.today());
   }
   if (hooks.apply) hooks.apply(merged);
+  if (hooks.onAi) {
+    try { hooks.onAi(await loadAiNotes()); } catch (error) { console.error(error); }
+  }
   await claimReferral();
   await refreshInvites();
   await pushState();
