@@ -12,6 +12,10 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == uid;
       }
 
+      match /ai/{wordId} {
+        allow read, write: if request.auth != null && request.auth.uid == uid;
+      }
+
       // A new account may create its own referral under the inviter, once.
       // Only the inviter can read the list. Nobody can edit or delete it.
       match /referrals/{newUid} {

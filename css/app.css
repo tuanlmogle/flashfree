@@ -463,6 +463,21 @@ html.is-card-study .study a {
   line-height: 1;
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
 }
+.ai-label {
+  display: inline-block;
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a4b12;
+  background: #f8e7cf;
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.explain { margin: 8px 0 0; color: var(--text-soft); font-size: 0.95rem; }
+.ex-en.extra { margin-top: 10px; }
+.ai-btn { margin-top: 10px; }
 .word {
   font-family: var(--serif);
   font-weight: 640;
