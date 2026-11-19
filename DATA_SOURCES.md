@@ -156,6 +156,8 @@ Cụm động từ và thành ngữ nằm chung một chủ đề, **Cụm độ
 
 Đã kiểm tra `LICENSE.txt` của kho ngày 14/11/2026 (văn bản CC BY-SA 4.0) và bản phát hành 17.0.0 (23/04/2026). Các SVG OpenMoji mà bộ thẻ thực sự dùng được lưu trong `assets/openmoji/` (đã rút gọn). Từ không khớp chắc với chú thích OpenMoji thì không có icon. Nút **i** trên thẻ ghi OpenMoji và giấy phép.
 
+Tên và từ khóa để ghép icon lấy từ chú thích OpenMoji và từ **Unicode CLDR Annotations** (bản tiếng Anh, `cldr-annotations-full`). Dữ liệu CLDR thuộc [Unicode License](https://www.unicode.org/license.txt). App không chép nguyên file CLDR; chỉ dùng từ khóa để chọn emoji đã có trong OpenMoji.
+
 ## 8. Wikimedia Commons, qua trang Wikipedia tiếng Anh
 
 | | |

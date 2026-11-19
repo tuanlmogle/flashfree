@@ -374,6 +374,7 @@ function pool() {
 }
 
 function reindex() {
+  primaryIds = null;
   INDEX = new Map(DATA.cards.map((card) => [card.id, card]));
   for (const card of ownAsCards()) INDEX.set(card.id, card);
 }
@@ -687,10 +688,34 @@ function topicName(id) {
   return found ? found.name : id;
 }
 
+const POS_RANK = { noun: 0, verb: 1, adj: 2, adv: 3, phrase: 4 };
+let primaryIds = null;
+
+function primaryCardIds() {
+  if (primaryIds) return primaryIds;
+  const groups = new Map();
+  for (const card of DATA.cards) {
+    const key = String(card.word || "").toLowerCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(card);
+  }
+  primaryIds = new Set();
+  for (const list of groups.values()) {
+    list.sort((a, b) => (
+      LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level)
+      || (POS_RANK[a.pos] ?? 9) - (POS_RANK[b.pos] ?? 9)
+    ));
+    primaryIds.add(list[0].id);
+  }
+  return primaryIds;
+}
+
 function inDeck(card) {
   if (card.own) return STATE.settings.ownDeck !== false;
   const settings = STATE.settings;
   if (!settings.levels.includes(card.level)) return false;
+  const word = String(card.word || "");
+  if (word && !word.includes(" ") && !primaryCardIds().has(card.id)) return false;
   if (!settings.topics.length) return true;
   return (card.topics || []).some((id) => settings.topics.includes(id));
 }
@@ -1049,7 +1074,7 @@ function pumpToast() {
     node.classList.remove("celebrate");
     toastOn = false;
     pumpToast();
-  }, 2200);
+  }, 4000);
 }
 
 function speakerButton() {
@@ -1138,6 +1163,8 @@ function fillCard() {
   const node = document.getElementById("card");
   if (!card || !node) return;
   node.classList.remove("is-flipped");
+  node.classList.add("is-settled");
+  node.dataset.id = card.id;
   node.innerHTML = cardFaces(card, item);
   bindPicture(node);
   updateStudyChrome();
@@ -1621,9 +1648,12 @@ function builtinMatches(word) {
     if (seen.has(card.meaning)) continue;
     seen.add(card.meaning);
     out.push(card);
-    if (out.length >= 3) break;
   }
-  return out;
+  out.sort((a, b) => (
+    LEVELS.indexOf(a.level) - LEVELS.indexOf(b.level)
+    || (POS_RANK[a.pos] ?? 9) - (POS_RANK[b.pos] ?? 9)
+  ));
+  return out.slice(0, 3);
 }
 
 function prefillHtml(word) {
@@ -2090,7 +2120,7 @@ function renderCredits() {
     <article class="source">
       <div class="badge">CC BY-SA 4.0</div>
       <h2>OpenMoji</h2>
-      <p>Bộ icon của thẻ. Phiên bản 17.0.0, giấy phép Creative Commons Ghi công – Chia sẻ tương tự 4.0. Chỉ những SVG được dùng mới nằm trong app (<code>assets/openmoji/</code>). Từ không khớp chắc thì không có icon, để tránh gán nhầm. Từ do AI thêm hiện SVG OpenMoji của emoji đó nếu có trong bộ, không thì hiện emoji của máy.</p>
+      <p>Bộ icon của thẻ. Phiên bản 17.0.0, giấy phép Creative Commons Ghi công – Chia sẻ tương tự 4.0. Chỉ những SVG được dùng mới nằm trong app (<code>assets/openmoji/</code>). Từ không khớp chắc thì không có icon, để tránh gán nhầm. Việc ghép từ với emoji còn dựa trên chú thích và từ khóa của Unicode CLDR Annotations (tiếng Anh), theo Unicode License. Từ do AI thêm hiện SVG OpenMoji của emoji đó nếu có trong bộ, không thì hiện emoji của máy.</p>
       <p><a href="https://openmoji.org/" target="_blank" rel="noopener">openmoji.org</a> ·
       <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a></p>
     </article>
@@ -2514,7 +2544,11 @@ function grade(know) {
 function flip() {
   const card = document.getElementById("card");
   if (!card) return;
+  card.classList.remove("is-settled");
   card.classList.toggle("is-flipped");
+  const settle = () => card.classList.add("is-settled");
+  card.addEventListener("transitionend", settle, { once: true });
+  window.setTimeout(settle, 480);
   const word = currentCard();
   if (word) autoSpeak(word, "flip");
 }
