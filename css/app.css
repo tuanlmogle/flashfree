@@ -644,6 +644,7 @@ html.is-card-study .study a {
 .chip.on { background: var(--teal); color: var(--chip-on-fg); border-color: var(--teal); }
 .chip small { opacity: 0.8; }
 .who { display: flex; gap: 12px; align-items: center; }
+.sign-error { color: var(--miss); font-weight: 650; margin: 8px 0 0; }
 .profile-photo {
   width: 64px;
   height: 64px;

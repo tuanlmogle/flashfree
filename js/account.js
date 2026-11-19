@@ -11,6 +11,8 @@ let hooks = null;
 let user = null;
 let db = null;
 let auth = null;
+let authMod = null;
+let googleProvider = null;
 let timer = 0;
 let pushing = false;
 let ready = false;
@@ -38,14 +40,6 @@ export function bindAccount(next) {
   });
 }
 
-function prefersRedirect() {
-  const ua = navigator.userAgent || "";
-  if (/Android|iPhone|iPad|iPod/i.test(ua)) return true;
-  const narrow = window.matchMedia("(max-width: 768px)").matches;
-  const coarse = window.matchMedia("(pointer: coarse)").matches;
-  return narrow && coarse;
-}
-
 async function boot() {
   if (ready) return true;
   if (booting) return booting;
@@ -60,13 +54,16 @@ async function boot() {
 }
 
 async function bootOnce() {
-  const [{ initializeApp, getApps }, authMod, firestoreMod] = await Promise.all([
+  const [{ initializeApp, getApps }, loadedAuth, firestoreMod] = await Promise.all([
     import(`${CDN}/firebase-app.js`),
     import(`${CDN}/firebase-auth.js`),
     import(`${CDN}/firebase-firestore.js`),
   ]);
+  authMod = loadedAuth;
   const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
   auth = authMod.getAuth(app);
+  googleProvider = new authMod.GoogleAuthProvider();
+  googleProvider.setCustomParameters({ prompt: "select_account" });
   try {
     db = firestoreMod.initializeFirestore(app, {
       localCache: firestoreMod.persistentLocalCache({
@@ -83,10 +80,15 @@ async function bootOnce() {
   });
   try {
     await authMod.getRedirectResult(auth);
-  } catch (error) {
-    console.error(error);
+  } catch {
+    /* An old redirect that the browser blocked should not stop sign-in. */
   }
   return true;
+}
+
+export function prepareSignIn() {
+  if (!firebaseReady()) return Promise.resolve(false);
+  return boot().then(() => true).catch(() => false);
 }
 
 export async function ensureFirebaseApp() {
@@ -129,42 +131,33 @@ export function publicUser() {
   };
 }
 
-export async function signInGoogle() {
-  if (!firebaseReady()) return { ok: false, reason: "disabled" };
-  try {
-    if (!ready) await boot();
-  } catch {
-    return { ok: false, reason: "load" };
+function redirectSignIn() {
+  return authMod.signInWithRedirect(auth, googleProvider).then(
+    () => ({ ok: true, redirect: true }),
+    (error) => ({ ok: false, reason: error && error.code ? error.code : "redirect" }),
+  );
+}
+
+function popupFailure(error) {
+  const code = error && error.code ? error.code : "popup";
+  if (code === "auth/popup-blocked") return redirectSignIn();
+  return { ok: false, reason: code };
+}
+
+// Must call signInWithPopup in the same turn as the tap. Awaiting the SDK
+// first makes iOS drop the popup.
+export function signInGoogle() {
+  if (!firebaseReady()) return Promise.resolve({ ok: false, reason: "disabled" });
+  if (!auth || !authMod || !googleProvider) {
+    return Promise.resolve({ ok: false, reason: "load" });
   }
-  if (!auth) return { ok: false, reason: "load" };
-  const authMod = await import(`${CDN}/firebase-auth.js`);
-  const provider = new authMod.GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: "select_account" });
-  const redirect = async () => {
-    await authMod.signInWithRedirect(auth, provider);
-    return { ok: true, redirect: true };
-  };
-  if (prefersRedirect()) {
-    try {
-      return await redirect();
-    } catch (error) {
-      return { ok: false, reason: error && error.code ? error.code : "redirect" };
-    }
-  }
+  let pending;
   try {
-    await authMod.signInWithPopup(auth, provider);
-    return { ok: true };
+    pending = authMod.signInWithPopup(auth, googleProvider);
   } catch (error) {
-    const code = error && error.code ? error.code : "";
-    if (code === "auth/popup-blocked" || code === "auth/operation-not-supported-in-this-environment") {
-      try {
-        return await redirect();
-      } catch (redirectError) {
-        return { ok: false, reason: redirectError && redirectError.code ? redirectError.code : "redirect" };
-      }
-    }
-    return { ok: false, reason: code || "popup" };
+    return Promise.resolve(popupFailure(error));
   }
+  return Promise.resolve(pending).then(() => ({ ok: true }), popupFailure);
 }
 
 export async function signOutGoogle() {
