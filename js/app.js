@@ -1,7 +1,7 @@
 /* FlashFree — SM-2 flashcards. Biết = grade 4, Chưa biết = grade 1.
    A failed card is shown once more in the same session; the stored grade stays the first answer. */
 
-import { accountEnabled, bindAccount, currentUser, scheduleSync, signInGoogle, signOutGoogle } from "./account.js";
+import { accountEnabled, bindAccount, currentUser, prepareSignIn, scheduleSync, signInGoogle, signOutGoogle } from "./account.js";
 import { AI_MESSAGES, getAiNote, mergeRemoteNotes, saveEditedNote, writeWithAi } from "./ai.js";
 import {
   STREAK_MIN,   EXTRA_STEP, NEW_LIMITS, calendarKind, earliestStudyDay, extraToday,
@@ -115,6 +115,7 @@ let ICONS = {};
 let INDEX = new Map();
 let STATE = null;
 let view = "study";
+let signInError = "";
 let returnView = "decks";
 let editingId = "";
 let session = null;
@@ -2242,8 +2243,20 @@ function paintAvatar() {
   button.innerHTML = `<span>${esc(initial)}</span>`;
 }
 
+function signInMessage(reason) {
+  const code = reason || "unknown";
+  if (code === "disabled") return "Chưa bật đăng nhập.";
+  if (code === "load") return "Không tải được đăng nhập (load). Bạn vẫn học được như khách.";
+  if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+    return `Đã huỷ đăng nhập (${code}).`;
+  }
+  return `Không đăng nhập được (${code}).`;
+}
+
 function renderProfile() {
+  prepareSignIn();
   const person = currentUser();
+  if (person) signInError = "";
   const name = person ? (person.name || "Không tên") : "Khách";
   const email = person && person.email ? person.email : "Chưa đăng nhập";
   const photo = person && person.photo
@@ -2253,6 +2266,7 @@ function renderProfile() {
   const authButton = person
     ? `<button type="button" class="ghost" data-act="logout">Đăng xuất</button>`
     : `<button type="button" class="primary" data-act="sign-in" ${enabled ? "" : "disabled"}>${enabled ? "Đăng nhập bằng Google" : "Chưa bật đăng nhập"}</button>`;
+  const authError = signInError ? `<p class="sign-error" role="alert">${esc(signInError)}</p>` : "";
   const streak = streakCount();
   const best = STATE.freeze.best || 0;
   const today = todayISO();
@@ -2266,6 +2280,7 @@ function renderProfile() {
       </div>
     </div>
     ${authButton}
+    ${authError}
     <h2 class="section-title">Chuỗi ngày</h2>
     <div class="stats">
       <article class="stat"><div class="k">Hiện tại</div><div class="v">${streak}</div></article>
@@ -3001,15 +3016,18 @@ document.addEventListener("click", async (event) => {
     return;
   }
   if (name === "sign-in") {
+    signInError = "";
     signInGoogle().then((result) => {
       if (result && result.ok) return;
-      if (result && result.reason === "disabled") toast("Chưa bật đăng nhập");
-      else if (result && result.reason === "load") toast("Không tải được đăng nhập. Bạn vẫn học được như khách.");
-      else if (result && result.reason === "auth/unauthorized-domain") toast("Tên miền này chưa được phép đăng nhập");
-      else if (result && result.reason !== "auth/popup-closed-by-user" && result && result.reason !== "auth/cancelled-popup-request") {
-        toast("Không đăng nhập được");
-      }
-    }).catch(() => toast("Không đăng nhập được. Bạn vẫn học được như khách."));
+      signInError = signInMessage(result && result.reason);
+      toast(signInError);
+      if (view === "profile") renderProfile();
+    }).catch((error) => {
+      const code = error && error.code ? error.code : "unknown";
+      signInError = signInMessage(code);
+      toast(signInError);
+      if (view === "profile") renderProfile();
+    });
     return;
   }
   if (name === "logout") {
